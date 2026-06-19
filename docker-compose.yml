@@ -1,0 +1,109 @@
+services:
+  themes:
+    image: epam/ai-dial-chat-themes:0.10.0
+    ports:
+      - "3001:8080"
+    volumes:
+        - ./dial_conf/rag.svg:/var/www/rag.svg:ro
+    restart: unless-stopped
+
+  chat:
+    image: epam/ai-dial-chat:0.36.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - themes
+      - core
+    environment:
+      NEXTAUTH_SECRET: "secret"
+      THEMES_CONFIG_HOST: "http://themes:8080"
+      DIAL_API_HOST: "http://core:8080"
+      DIAL_API_KEY: "dial_api_key"
+      ENABLED_FEATURES: "conversations-section,prompts-section,top-settings,top-clear-conversation,top-chat-info,top-chat-model-settings,empty-chat-settings,header,footer,request-api-key,report-an-issue,likes,conversations-sharing,prompts-sharing,input-files,attachments-manager,conversations-publishing,prompts-publishing,input-links,custom-applications,message-templates,marketplace,quick-apps"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2.4-alpine3.19
+    ports:
+      - "6379:6379"
+    mem_limit: 1200m
+    command: >
+      redis-server --maxmemory 1024mb --maxmemory-policy volatile-lfu --save "" --appendonly no --loglevel warning
+    restart: unless-stopped
+
+  core:
+    image: epam/ai-dial-core:0.44.4
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+      - adapter-dial
+    env_file:
+      - .env
+    environment:
+      AIDIAL_SETTINGS: '/opt/settings/settings.json'
+      JAVA_OPTS: '-Dgflog.config=/opt/settings/gflog.xml'
+      aidial.config.files: '["/opt/config/config.json"]'
+      aidial.redis.singleServerConfig.address: 'redis://redis:6379'
+      REMOTE_DIAL_URL: ${REMOTE_DIAL_URL}
+      REMOTE_DIAL_API_KEY: ${REMOTE_DIAL_API_KEY}
+      GENERIC_RAG_URL: ${GENERIC_RAG_URL:-http://host.docker.internal:5000}
+    volumes:
+      - ./dial_conf/settings:/opt/settings
+      - ./dial_conf/core/config.sh:/opt/config/config.sh
+      - ./dial_conf/core/config-template.json:/opt/config/config-template.json
+      - core-logs:/app/log
+      - core-data:/app/data
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: [ "/opt/config/config.sh && exec docker-entrypoint.sh" ]
+
+  adapter-dial:
+    image: epam/ai-dial-adapter-dial:0.6.0
+    environment:
+      DIAL_URL: "http://core:8080"
+      LOG_LEVEL: "INFO"
+    restart: unless-stopped
+
+  vectordb:
+    image: pgvector/pgvector:0.8.0-pg17
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./dial_conf/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    ports:
+      - "9200:9200"
+    mem_limit: 2g
+    environment:
+      xpack.security.enabled: false
+      xpack.security.enrollment.enabled: false
+      discovery.type: single-node
+      node.name: es-node-01
+      ELASTIC_PASSWORD: elastic
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+
+  mcp-inspector:
+    image: ghcr.io/modelcontextprotocol/inspector:latest
+    ports:
+      - "6274:6274"
+      - "6277:6277"
+    environment:
+      HOST: 0.0.0.0
+      MCP_AUTO_OPEN_ENABLED: false
+
+volumes:
+  core-logs:
+  core-data:
+  postgres-data:
+  elastic-data:
