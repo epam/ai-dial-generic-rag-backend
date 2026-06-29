@@ -275,7 +275,7 @@ class VectorIndexStorage(TableIndexStorage[VectorType]):
                     self._get_documents_filtering_clause(table, *documents)
                     if documents is not None else true()
                 ).order_by(
-                    table.c.index.l2_distance(query)
+                    table.c.index.cosine_distance(query)
                 ).limit(
                     bindparam("limit", limit)
                 )

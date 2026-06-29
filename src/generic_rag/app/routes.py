@@ -14,7 +14,7 @@ from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model
 from starlette.responses import StreamingResponse
-from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
+from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_CONTENT
 from starlette.templating import Jinja2Templates
 from taskiq import AsyncBroker, AsyncTaskiqTask
 
@@ -111,7 +111,7 @@ async def upload_document(
             metadata = json.loads(metadata)
         except json.JSONDecodeError as e:
             raise HTTPException(
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"{metadata}: invalid json: {str(e)}",
             ) from e
     else:

@@ -80,7 +80,9 @@ async def pgvector_storage_backend_factory() -> PgvectorIndexStorageBackend:
         async with session.begin():
             yield session
 
-    return await PgvectorIndexStorageBackend.create(create_session)
+    return await PgvectorIndexStorageBackend.create(
+        create_session  # todo: use separate db connection
+    )
 
 
 @singleton

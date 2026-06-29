@@ -2,7 +2,7 @@ import io
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from unstructured.partition.auto import partition
 
 from generic_rag.types import Document, DocumentParser, TextChunk
@@ -16,6 +16,19 @@ class UnstructuredParserConfig(BaseModel):
         default=1000,
         description="the chunk size for unstructured document loader"
     )
+    combine_text_under_n_chars: int = Field(
+        default=100,
+        description="combine small chunks until reaching this many characters"
+    )
+
+    @model_validator(mode="after")
+    def check_combine_within_chunk_size(self) -> "UnstructuredParserConfig":
+        if self.combine_text_under_n_chars > self.chunk_size:
+            raise ValueError(
+                f"combine_text_under_n_chars ({self.combine_text_under_n_chars}) "
+                f"must not exceed chunk_size ({self.chunk_size})"
+            )
+        return self
 
 
 class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
@@ -35,7 +48,7 @@ class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
             strategy="fast",
             chunking_strategy="by_title",
             multipage_sections=False,
-            combine_text_under_n_chars=0,
+            combine_text_under_n_chars=self.config.combine_text_under_n_chars,
             new_after_n_chars=self.config.chunk_size,
             max_characters=self.config.chunk_size,
         )

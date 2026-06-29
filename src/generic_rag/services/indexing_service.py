@@ -9,7 +9,7 @@ from generic_rag.scope import ScopeName
 from generic_rag.types import AnyChunk, Document, ImageChunk, TextChunk
 from generic_rag.utils.profile import log_execution_time
 
-INDEXING_BATCH_SIZE = 1000
+INDEXING_BATCH_SIZE = 1000  # todo: get from config
 
 logger = logging.getLogger(__name__)
 

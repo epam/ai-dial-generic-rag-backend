@@ -12,7 +12,7 @@ from injection import scoped
 from pydantic import Field
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_CONTENT
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from generic_rag.channel import Channel
@@ -93,6 +93,8 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         result = await get_current_session().scalars(
             select(DocumentEntity).where(
                 where_clause
+            ).order_by(
+                DocumentEntity.document_id.desc()
             ).offset(
                 offset
             ).limit(
@@ -252,7 +254,7 @@ class DocumentService:
 
         except jsonschema.ValidationError as e:
             raise HTTPException(
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Document metadata is not valid: {str(e)}"
             ) from e
 

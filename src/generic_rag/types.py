@@ -29,7 +29,7 @@ from pydantic_core import PydanticUndefined
 
 from generic_rag.utils.generics import resolve_generic_arg
 
-DEFAULT_BACKEND = "pgvector"
+DEFAULT_BACKEND = "pgvector"  # todo: get rid of hardcode
 DEFAULT_RESULTS_LIMIT = 7
 DEFAULT_LLM_DEPLOYMENT = "gpt-4.1-2025-04-14"
 

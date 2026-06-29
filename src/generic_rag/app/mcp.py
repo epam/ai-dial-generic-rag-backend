@@ -1,5 +1,4 @@
 import base64
-import enum
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
@@ -42,7 +41,6 @@ from generic_rag.utils.pagination import PaginatedResults, Pagination
 provider = LocalProvider()
 
 
-@enum.unique
 class ToolName(StrEnum):
     LIST_DOCUMENTS = "list_documents_unordered"
     GET_PAGE = "get_page"

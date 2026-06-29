@@ -146,8 +146,8 @@ either by defining the application in DIAL's `config.json` or by creating the ap
 The repository already has preconfigured example application `generic-rag-example` which can be used as a reference.
 
 - Now you can open:
-  - <http://localhost:3000> for DIAL Chat UI
-  - <http://localhost:5000/docs> for generic-rag swagger documentation
+    - <http://localhost:3000> for DIAL Chat UI
+    - <http://localhost:5000/docs> for generic-rag swagger documentation
 
 > ⚠️ **macOS users:** If core container is not able to reach the generic app app on your host machine, comment out the `extra_hosts` section
 > for the `core` service in `docker-compose.yml`. Docker on MacOS already provides `host.docker.internal`

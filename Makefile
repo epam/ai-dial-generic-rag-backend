@@ -1,4 +1,4 @@
-.PHONY: init_venv remove_venv install download_spacy install_all lint format up run main down cleanup
+.PHONY: init_venv remove_venv install download_spacy install_all lint format test_unit up run main down cleanup
 
 init_venv:
 	poetry env use python3.13
@@ -7,7 +7,7 @@ remove_venv:
 	poetry env remove --all
 
 install: init_venv
-	poetry install --no-root
+	poetry install
 
 # spacy cache expires after some time, thus models will be re-downloaded even if already installed.
 # thus we have separate make commands to install venv packages and download spacy models.
@@ -23,6 +23,9 @@ lint: install
 
 format: install
 	poetry run ruff check --fix
+
+test_unit: install
+	poetry run pytest tests/unit -v
 
 up:
 	docker compose -f docker-compose.yml up -d
