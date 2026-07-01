@@ -22,8 +22,11 @@ def create_attachment(chunks: list[AnyChunk], cite_index: str | int) -> Attachme
         if not (title and reference_url):
             chunk_source = ChunkSource.from_chunk(chunk)
             title = f"[{cite_index}] {chunk_source.source_display_name}"
-            reference_url = f"{chunk_source.source_url}#page={chunk.page_number}" if chunk.page_number \
+            reference_url = (
+                f"{chunk_source.source_url}#page={chunk.page_number}"
+                if chunk.page_number
                 else chunk_source.source_url
+            )
 
         if isinstance(chunk, TextChunk):
             data += f"{chunk.text}\n\n"

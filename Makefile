@@ -20,9 +20,11 @@ install_all: install download_spacy
 lint: install
 	poetry check --lock
 	poetry run ruff check
+	poetry run ruff format --check
 
 format: install
 	poetry run ruff check --fix
+	poetry run ruff format
 
 test: install
 	poetry run pytest tests/unit -v

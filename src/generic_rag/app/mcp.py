@@ -18,7 +18,10 @@ from mcp.types import ImageContent, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, create_model
 
 from generic_rag.channel import Channel, RequestConfig
-from generic_rag.components.retrieval.document_selector import ExactDocumentsDocumentSelector, ExplicitDocumentSelector
+from generic_rag.components.retrieval.document_selector import (
+    ExactDocumentsDocumentSelector,
+    ExplicitDocumentSelector,
+)
 from generic_rag.scope import ChannelBindings
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.chunk_sources_manager import ChunkSource
@@ -50,13 +53,16 @@ class ToolName(StrEnum):
 
 class DocumentMetadata(BaseModel):
     """Document summary."""
+
     id: Annotated[int, Field(description="Unique id of this document")]
     title: Annotated[str, Field(description="Document title")]
     number_of_pages: Annotated[int, Field(description="Number of document pages", ge=0)]
 
     @classmethod
     @inject
-    async def get_dynamic_model[T: DocumentMetadata](cls: type[T], metadata_service: MetadataService = NotImplemented):
+    async def get_dynamic_model[T: DocumentMetadata](
+        cls: type[T], metadata_service: MetadataService = NotImplemented
+    ):
         if filterable_fields := metadata_service.get_filterable_fields():
             return create_model(
                 cls.__name__,
@@ -68,7 +74,7 @@ class DocumentMetadata(BaseModel):
                         field_info,
                     )
                     for field_name, field_info in filterable_fields
-                }
+                },
             )
         return cls
 
@@ -83,7 +89,10 @@ class DocumentMetadata(BaseModel):
             )
         )
 
-@provider.tool(name=ToolName.LIST_DOCUMENTS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+
+@provider.tool(
+    name=ToolName.LIST_DOCUMENTS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+)
 @asfunction()
 class ListDocumentsTool(NamedTuple):
     channel: Channel
@@ -94,10 +103,12 @@ class ListDocumentsTool(NamedTuple):
         self,
         metadata_filter: Annotated[
             dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields")
+            Field(description="Filter by metadata fields"),
         ] = None,
         offset: Annotated[int, Field(ge=0, description="Offset, for pagination")] = 0,
-        limit: Annotated[int, Field(ge=0, description="Maximum number of results to return, for pagination")] = 25,
+        limit: Annotated[
+            int, Field(ge=0, description="Maximum number of results to return, for pagination")
+        ] = 25,
     ) -> dict[str, Any]:
         """
         List indexed documents along with their metadata.
@@ -108,10 +119,7 @@ class ListDocumentsTool(NamedTuple):
         if metadata_filter:
             matcher_config_model = await DocumentMatcherConfig.get_dynamic_model()
             document_matcher = DocumentMatcher(
-                self.channel.channel_key,
-                matcher_config_model.model_validate({
-                    "filters": [metadata_filter]
-                })
+                self.channel.channel_key, matcher_config_model.model_validate({"filters": [metadata_filter]})
             )
         else:
             document_matcher = None
@@ -120,9 +128,9 @@ class ListDocumentsTool(NamedTuple):
         documents_list = await self.document_service.list_documents(pagination, document_matcher)
         documents_stats: dict[int, DocumentStats] = {
             doc_stats.document_id: doc_stats
-            for doc_stats in await self.stats_service.get_document_stats(
-                *[doc.id for doc in documents_list.results]
-            )
+            for doc_stats in await self.stats_service.get_document_stats(*[
+                doc.id for doc in documents_list.results
+            ])
         }
 
         document_metadata_model = await DocumentMetadata.get_dynamic_model()
@@ -148,9 +156,8 @@ class GetPageTool(NamedTuple):
         document_id: Annotated[int, Field(description="ID of the document", ge=1)],
         page_ix: Annotated[int, Field(description="Page index", ge=1)],
         retrieve_type: Annotated[
-            Literal["text", "image", "both"],
-            Field(alias="type", description="Content type to retrieve")
-        ] = "both"
+            Literal["text", "image", "both"], Field(alias="type", description="Content type to retrieve")
+        ] = "both",
     ) -> list[TextContent | ImageContent]:
         """Returns the full content of a specific page (text, image, or both)."""
         doc_pages = (document_id, page_ix)
@@ -184,7 +191,9 @@ class RetrievedChunk(BaseModel):
     document_id: Annotated[int, Field(description="`id` of related document")]
     chunk_id: Annotated[int, Field(description="`id` of chunk within the document")]
     text: Annotated[str, Field(description="text of retrieved chunk")]
-    page_number: Annotated[int | None, Field(description="number of page where this chunk was extracted")] = None
+    page_number: Annotated[int | None, Field(description="number of page where this chunk was extracted")] = (
+        None
+    )
     metadata: Annotated[dict | None, Field(description="metadata of related document", default_factory=dict)]
 
     @classmethod
@@ -237,7 +246,9 @@ def _get_retriever_overrides(document_ids: list[int] | None, metadata_filter: di
     return {}
 
 
-@provider.tool(name=ToolName.RETRIEVE_TEXT_CHUNKS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+@provider.tool(
+    name=ToolName.RETRIEVE_TEXT_CHUNKS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+)
 @asfunction()
 class DataRetrievalTool(NamedTuple):
     channel: Channel
@@ -246,10 +257,12 @@ class DataRetrievalTool(NamedTuple):
     async def __call__(
         self,
         query: Annotated[str, Field(description="The search query")],
-        document_ids: Annotated[list[int] | None, Field(description="Restrict search to specific documents")] = None,
+        document_ids: Annotated[
+            list[int] | None, Field(description="Restrict search to specific documents")
+        ] = None,
         metadata_filter: Annotated[
             dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields. Ignored if document_ids is provided")
+            Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
         ] = None,
     ) -> list[RetrievedChunk]:
         """
@@ -262,7 +275,7 @@ class DataRetrievalTool(NamedTuple):
             defaults=self.channel.request_config,
             overrides={
                 "retriever": _get_retriever_overrides(document_ids, metadata_filter),
-            }
+            },
         )
 
         retriever = Retriever.create(request_config.retriever)
@@ -276,7 +289,8 @@ class DataRetrievalTool(NamedTuple):
                     doc.metadata.get("chunks", []),
                     metadata_field_names=metadata_field_names,
                 )
-            ) is not None
+            )
+            is not None
         ]
 
 
@@ -313,7 +327,9 @@ Do not include filtering or scoping instructions in the query; use other argumen
 """
 
 
-@provider.tool(name=ToolName.RAG_SEARCH, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+@provider.tool(
+    name=ToolName.RAG_SEARCH, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+)
 @asfunction()
 class SearchTool(NamedTuple):
     channel: Channel
@@ -321,10 +337,12 @@ class SearchTool(NamedTuple):
     async def __call__(
         self,
         query: Annotated[str, Field(description=_SEARCH_QUERY_DESCRIPTION)],
-        document_ids: Annotated[list[int] | None, Field(description="Restrict search to specific documents")] = None,
+        document_ids: Annotated[
+            list[int] | None, Field(description="Restrict search to specific documents")
+        ] = None,
         metadata_filter: Annotated[
             dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields. Ignored if document_ids is provided")
+            Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
         ] = None,
     ) -> TextContent:
         """
@@ -340,8 +358,8 @@ class SearchTool(NamedTuple):
                 "retriever": _get_retriever_overrides(document_ids, metadata_filter),
                 "generation": {
                     "type": "default",
-                }
-            }
+                },
+            },
         )
 
         retriever = Retriever.create(request_config.retriever)
@@ -369,7 +387,11 @@ class DynamicSchemasTransform(Transform):
         for current_tool in await super().list_tools(tools):
             transformed = current_tool
 
-            if current_tool.name in {ToolName.LIST_DOCUMENTS, ToolName.RETRIEVE_TEXT_CHUNKS, ToolName.RAG_SEARCH}:
+            if current_tool.name in {
+                ToolName.LIST_DOCUMENTS,
+                ToolName.RETRIEVE_TEXT_CHUNKS,
+                ToolName.RAG_SEARCH,
+            }:
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
                     transform_args={
@@ -401,14 +423,12 @@ class ChannelMiddleware(Middleware):
     """Middleware that performs initialization Channel initialization for requests."""
 
     async def on_request(
-        self,
-        context: MiddlewareContext[mt.Request[Any, Any]],
-        call_next: CallNext[mt.Request[Any, Any], Any]
+        self, context: MiddlewareContext[mt.Request[Any, Any]], call_next: CallNext[mt.Request[Any, Any], Any]
     ) -> Any:
         if (
-            context.fastmcp_context and
-            context.fastmcp_context.request_context and
-            (request := context.fastmcp_context.request_context.request)
+            context.fastmcp_context
+            and context.fastmcp_context.request_context
+            and (request := context.fastmcp_context.request_context.request)
         ):
             api_key = request.headers.get("api-key")
             application_id = request.headers.get("x-dial-application-id")

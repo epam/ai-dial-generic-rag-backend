@@ -28,17 +28,13 @@ def _apply_migrations(url: sqlalchemy.engine.URL):
     if url.drivername == "postgresql+asyncpg":
         url = url.set(drivername="postgresql+psycopg")
 
-    backend = get_backend(
-        url.render_as_string(hide_password=False)
-    )
-    backend.apply_migrations(
-        migrations=backend.to_apply(migrations)
-    )
+    backend = get_backend(url.render_as_string(hide_password=False))
+    backend.apply_migrations(migrations=backend.to_apply(migrations))
     logger.info("All migrations applied")
 
 
 async def get_engine(config: DatabaseConfig, exit_stack: AsyncExitStack) -> AsyncEngine:
-    """ Get database engine. """
+    """Get database engine."""
     engine = create_async_engine(config.get_url(), pool_pre_ping=True)
     exit_stack.push_async_callback(engine.dispose)
     url = engine.url

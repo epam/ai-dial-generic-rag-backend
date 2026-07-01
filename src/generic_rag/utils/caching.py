@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class CachingFileStorage(FileStorage):
-    """ Implementation of FileStorage with in-memory caching. """
+    """Implementation of FileStorage with in-memory caching."""
 
     def __init__(self, storage: FileStorage, cache: Cache):
         self._storage = storage
@@ -20,7 +20,9 @@ class CachingFileStorage(FileStorage):
     async def get_bucket(self) -> str:
         return await self._storage.get_bucket()
 
-    async def put_file(self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO) -> FileMetadata:
+    async def put_file(
+        self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO
+    ) -> FileMetadata:
         file_metadata = await self._storage.put_file(bucket, filepath, content_type, content)
         if isinstance(content, bytes):
             cache_key = (file_metadata.url, file_metadata.etag)
@@ -35,12 +37,11 @@ class CachingFileStorage(FileStorage):
             cache_key = (url, metadata.etag)
 
             if cache_key not in self._cache and float(metadata.content_length) < self._cache.maxsize:
-                content = b"".join(
-                    [chunk async for chunk in await self._storage.download_file(url)]
-                )
+                content = b"".join([chunk async for chunk in await self._storage.download_file(url)])
                 self._add_to_cache(cache_key, content)
 
             if (content := self._cache.get(cache_key)) is not None:
+
                 async def _content_gen():
                     yield content
 
@@ -63,8 +64,8 @@ class CachingFileStorage(FileStorage):
             value_size = humanfriendly.format_size(len(content), binary=True)
             max_cache_size = humanfriendly.format_size(int(self._cache.maxsize), binary=True)
             logger.warning(
-                f"{self.__class__.__qualname__}: could not add '{cache_key}' " +
-                f"(value size: {value_size}, max cache size: {max_cache_size})"
+                f"{self.__class__.__qualname__}: could not add '{cache_key}' "
+                + f"(value size: {value_size}, max cache size: {max_cache_size})"
             )
         else:
             cache_size = humanfriendly.format_size(self._cache.currsize, binary=True)

@@ -6,7 +6,19 @@ from typing import Annotated
 from urllib.parse import urljoin
 
 from async_lru import alru_cache
-from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Path, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import APIKeyHeader
@@ -14,7 +26,12 @@ from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model
 from starlette.responses import StreamingResponse
-from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_CONTENT
+from starlette.status import (
+    HTTP_201_CREATED,
+    HTTP_204_NO_CONTENT,
+    HTTP_404_NOT_FOUND,
+    HTTP_422_UNPROCESSABLE_CONTENT,
+)
 from starlette.templating import Jinja2Templates
 from taskiq import AsyncBroker, AsyncTaskiqTask
 
@@ -35,17 +52,15 @@ _channel = APIRouter()
 
 
 async def _setup_channel_scope(
-    api_key: Annotated[str, Depends(
-        APIKeyHeader(
-            name="Api-Key",
-            scheme_name="Api-Key",
-            description="Authorization with DIAL api key"
-        ))
+    api_key: Annotated[
+        str,
+        Depends(
+            APIKeyHeader(name="Api-Key", scheme_name="Api-Key", description="Authorization with DIAL api key")
+        ),
     ],
-    dial_application_id: Annotated[str | None, Header(
-        alias="x-dial-application-id",
-        include_in_schema=False
-    )] = None,
+    dial_application_id: Annotated[
+        str | None, Header(alias="x-dial-application-id", include_in_schema=False)
+    ] = None,
 ):
     async with ChannelBindings(SecretStr(api_key), dial_application_id).scope.adefine():
         yield
@@ -63,7 +78,7 @@ async def data_retrieval(
     request: RetrievalRequest,
     retrieval_service: Inject[RetrievalService],
 ) -> Sequence[RetrievalResult]:
-    """ Run retriever and return chunks which are relevant to a given query. """
+    """Run retriever and return chunks which are relevant to a given query."""
     try:
         return await retrieval_service.data_retrieval(request)
     except ValidationError as e:
@@ -72,7 +87,7 @@ async def data_retrieval(
 
 @_channel.get("/retrieval/schema", tags=["retrieval"])
 async def retrieval_request_schema(retrieval_service: Inject[RetrievalService]):
-    """ Get JSON-schema of retrieval request body. """
+    """Get JSON-schema of retrieval request body."""
     return await retrieval_service.get_request_schema()
 
 
@@ -80,10 +95,8 @@ async def retrieval_request_schema(retrieval_service: Inject[RetrievalService]):
 async def list_documents(
     pagination: Annotated[Pagination, Depends(get_pagination)],
     document_service: Inject[DocumentService],
-) -> PaginatedResults[
-    Document
-]:
-    """ List all documents uploaded to the channel. """
+) -> PaginatedResults[Document]:
+    """List all documents uploaded to the channel."""
     return await document_service.list_documents(pagination)
 
 
@@ -96,7 +109,7 @@ async def upload_document(
         Form(
             description="metadata to assign with document (should match json schema associated with this channel)",
             examples=["{}"],
-        )
+        ),
     ] = None,
     document_service: Inject[DocumentService] = NotImplemented,
     broker: Inject[AsyncBroker] = NotImplemented,
@@ -119,9 +132,7 @@ async def upload_document(
 
     document = await document_service.upload_document(folder, attachment, metadata)
 
-    task: AsyncTaskiqTask = await broker.find_task(
-        TaskName.index_document
-    ).kiq(
+    task: AsyncTaskiqTask = await broker.find_task(TaskName.index_document).kiq(
         document_id=document.id,
     )
 
@@ -136,10 +147,8 @@ async def import_document(
     attachment: Annotated[UploadFile, File(..., description="the exported document to import")],
     export_service: Inject[ExportService],
 ) -> Document:
-    """ Import document into the channel. """
-    return await export_service.import_document(
-        await attachment.read()
-    )
+    """Import document into the channel."""
+    return await export_service.import_document(await attachment.read())
 
 
 @_channel.get("/documents/{id}", tags=["documents"])
@@ -147,7 +156,7 @@ async def get_document(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
     document_service: Inject[DocumentService],
 ) -> Document:
-    """ Get document with given id """
+    """Get document with given id"""
     return await document_service.get_document(document_id)
 
 
@@ -156,10 +165,8 @@ async def delete_document(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
     document_service: Inject[DocumentService],
 ):
-    """ Delete document from the channel """
-    return await document_service.delete_document(
-        document_id=document_id
-    )
+    """Delete document from the channel"""
+    return await document_service.delete_document(document_id=document_id)
 
 
 @_channel.get("/documents/{id}/download", tags=["documents"], response_class=StreamingResponse)
@@ -167,7 +174,7 @@ async def download_document_content(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
     document_service: Inject[DocumentService],
 ):
-    """ Download content of the document with given id """
+    """Download content of the document with given id"""
     document = await document_service.get_document(document_id)
     content_stream = await document.get_content_stream()
 
@@ -184,7 +191,7 @@ async def download_document_content(
             "Content-Length": str(document.size),
             "Content-Disposition": f'attachment; filename="{os.path.basename(document.display_name)}"',
             "Access-Control-Expose-Headers": "content-disposition",
-        }
+        },
     )
 
 
@@ -194,7 +201,7 @@ async def export_document_data(
     document_service: Inject[DocumentService],
     export_service: Inject[ExportService],
 ):
-    """ Export document and all its indexes. """
+    """Export document and all its indexes."""
     document = await document_service.get_document(document_id)
     document_data = await export_service.export_document(document)
 
@@ -211,36 +218,38 @@ async def export_document_data(
             "Content-Length": str(len(document_data)),
             "Content-Disposition": f'attachment; filename="{name}.msgpack"',
             "Access-Control-Expose-Headers": "content-disposition",
-        }
+        },
     )
 
 
 @_channel.put("/documents/{id}/reindex", tags=["documents"])
 async def reindex_document(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
-    index_names: Annotated[set[str], Query(
-        alias="index",
-        default_factory=set,
-        description="names of indexes to update (if not defined - all indexes will be updated)"
-    )],
-    force: Annotated[bool, Query(
-        description=(
-            "perform whole process, including document re-processing and rebuilding of all indexes "
-            "(in this case `index_names` parameter will be ignored); it not set, document processing "
-            "will be performed only if the document wasn't processed yet"
-        )
-    )] = False,
+    index_names: Annotated[
+        set[str],
+        Query(
+            alias="index",
+            default_factory=set,
+            description="names of indexes to update (if not defined - all indexes will be updated)",
+        ),
+    ],
+    force: Annotated[
+        bool,
+        Query(
+            description=(
+                "perform whole process, including document re-processing and rebuilding of all indexes "
+                "(in this case `index_names` parameter will be ignored); it not set, document processing "
+                "will be performed only if the document wasn't processed yet"
+            )
+        ),
+    ] = False,
     document_service: Inject[DocumentService] = NotImplemented,
     broker: Inject[AsyncBroker] = NotImplemented,
 ) -> Document:
-    """  Reindex the document with given id. """
-    document = await document_service.get_document(
-        document_id
-    )
+    """Reindex the document with given id."""
+    document = await document_service.get_document(document_id)
 
-    task: AsyncTaskiqTask = await broker.find_task(
-        TaskName.index_document
-    ).kiq(
+    task: AsyncTaskiqTask = await broker.find_task(TaskName.index_document).kiq(
         document_id=document.id,
         index_names=index_names or None,
         force=force,
@@ -259,7 +268,7 @@ class MetadataSchemaResponse(BaseModel):
             serialization_alias="schema",
             description="json schema of metadata that can assigned with documents",
             examples=[METADATA_SCHEMA_EXAMPLE],
-        )
+        ),
     ]
     dimensions: Annotated[
         dict[str, list[str]],
@@ -272,7 +281,7 @@ async def get_metadata_schema(
     channel: Inject[Channel],
     metadata_service: Inject[MetadataService],
 ) -> MetadataSchemaResponse:
-    """ Get the schema of metadata and available filtering dimensions. """
+    """Get the schema of metadata and available filtering dimensions."""
     return MetadataSchemaResponse(
         schema_=channel.metadata_schema,
         dimensions=await metadata_service.get_filtering_dimensions(),
@@ -280,7 +289,8 @@ async def get_metadata_schema(
 
 
 class ChannelConfigMixin(BaseModel):
-    """ Additional properties for a channel. """
+    """Additional properties for a channel."""
+
     channel_key: str = Field(..., description="Unique key associated with this channel.")
 
 
@@ -298,10 +308,8 @@ async def _get_channel_router(channel_service: ChannelService) -> APIRouter:
 
     @router.get("/config", tags=["config"], response_model_exclude_unset=True)
     async def channel_configuration(channel: Inject[Channel]) -> channel_config_response_model:
-        """ Configuration of this channel. """
-        return channel_config_response_model.model_validate(
-            channel.dump_config()
-        )
+        """Configuration of this channel."""
+        return channel_config_response_model.model_validate(channel.dump_config())
 
     router.include_router(_channel)
 
@@ -320,28 +328,25 @@ def _get_channel_openapi(router: APIRouter, settings: ApplicationSettings):
         version=APP_VERSION,
         summary="A channel-specific API of generic-rag application.",
         description=description,
-        servers=[{
-            "url": urljoin(
-                server_url.encoded_string(),
-                "/v1/deployments/{application_id}/route"
-            ),
-            "description": "DIAL application route",
-            "variables": {
-                "application_id": {
-                    "default": "generic-rag-example",
-                    "description": "id of the application in DIAL",
-                }
+        servers=[
+            {
+                "url": urljoin(server_url.encoded_string(), "/v1/deployments/{application_id}/route"),
+                "description": "DIAL application route",
+                "variables": {
+                    "application_id": {
+                        "default": "generic-rag-example",
+                        "description": "id of the application in DIAL",
+                    }
+                },
             }
-        }],
+        ],
         routes=router.routes,
     )
 
 
 async def setup_routes(app: FastAPI):
     channel_router = await _get_channel_router()
-    templates = Jinja2Templates(
-        os.path.join(os.path.dirname(__file__), "templates")
-    )
+    templates = Jinja2Templates(os.path.join(os.path.dirname(__file__), "templates"))
 
     @app.get("/application-type-schema")
     async def application_schema(channel_service: Inject[ChannelService]):
@@ -360,10 +365,8 @@ async def setup_routes(app: FastAPI):
             request=request,
             context={
                 "title": f"{APP_NAME} - swagger",
-                "urls": [
-                    {"name": "channel", "url": "/openapi/channel"}
-                ],
-            }
+                "urls": [{"name": "channel", "url": "/openapi/channel"}],
+            },
         )
 
     app.include_router(channel_router)

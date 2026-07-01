@@ -33,11 +33,14 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         self._channel_key = channel_key
 
     async def get_next_id(self) -> int:
-        return await get_current_session().scalar(
-            select(func.max(DocumentEntity.document_id) + 1).where(
-                DocumentEntity.channel_key == self._channel_key
+        return (
+            await get_current_session().scalar(
+                select(func.max(DocumentEntity.document_id) + 1).where(
+                    DocumentEntity.channel_key == self._channel_key
+                )
             )
-        ) or 1
+            or 1
+        )
 
     async def get_by_id(self, id_: int) -> DocumentEntity | None:
         return await get_current_session().scalar(
@@ -50,8 +53,7 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
     async def get_by_ids(self, ids: set[int]) -> Sequence[DocumentEntity]:
         result = await get_current_session().scalars(
             select(DocumentEntity).where(
-                DocumentEntity.channel_key == self._channel_key,
-                DocumentEntity.document_id.in_(ids)
+                DocumentEntity.channel_key == self._channel_key, DocumentEntity.document_id.in_(ids)
             )
         )
         return result.all()
@@ -73,15 +75,16 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         else:
             where_clause = DocumentEntity.channel_key == self._channel_key
 
-        return await get_current_session().scalar(
-            select(func.count()).select_from(
-                DocumentEntity
-            ).where(
-                where_clause
+        return (
+            await get_current_session().scalar(
+                select(func.count()).select_from(DocumentEntity).where(where_clause)
             )
-        ) or 0
+            or 0
+        )
 
-    async def list_all(self, matcher: DocumentMatcher | None, offset: int, limit: int) -> Sequence[DocumentEntity]:
+    async def list_all(
+        self, matcher: DocumentMatcher | None, offset: int, limit: int
+    ) -> Sequence[DocumentEntity]:
         if matcher and (matcher_query := matcher.get_query()) is not None:
             where_clause = and_(
                 DocumentEntity.channel_key == self._channel_key,
@@ -91,31 +94,29 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
             where_clause = DocumentEntity.channel_key == self._channel_key
 
         result = await get_current_session().scalars(
-            select(DocumentEntity).where(
-                where_clause
-            ).order_by(
-                DocumentEntity.document_id.desc()
-            ).offset(
-                offset
-            ).limit(
-                limit
-            )
+            select(DocumentEntity)
+            .where(where_clause)
+            .order_by(DocumentEntity.document_id.desc())
+            .offset(offset)
+            .limit(limit)
         )
         return result.all()
 
     async def set_status(self, document_id: int, status: DocumentStatus):
         await get_current_session().execute(
-            update(DocumentEntity).where(
+            update(DocumentEntity)
+            .where(
                 DocumentEntity.channel_key == self._channel_key,
                 DocumentEntity.document_id == document_id,
-            ).values(
-                status=status
             )
+            .values(status=status)
         )
 
 
 class _Document(Document):
-    content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes] | None]] = Field(..., repr=False, exclude=True)
+    content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes] | None]] = Field(
+        ..., repr=False, exclude=True
+    )
 
     async def get_content_stream(self) -> AsyncIterable[bytes] | None:
         if stream := await self.content_fetcher():
@@ -127,9 +128,7 @@ class _Document(Document):
         content_url = entity.url
 
         async def content_fetcher() -> AsyncIterable[bytes] | None:
-            return await file_storage.download_file(
-                content_url
-            )
+            return await file_storage.download_file(content_url)
 
         return cls(
             id=entity.document_id,
@@ -145,7 +144,7 @@ class _Document(Document):
 
 @scoped(ScopeName.channel)
 class DocumentService:
-    """ Service for managing documents stored in channel. """
+    """Service for managing documents stored in channel."""
 
     def __init__(self, channel: Channel, file_storage: FileStorage, chunk_service: ChunkService):
         self._channel = channel
@@ -254,16 +253,13 @@ class DocumentService:
 
         except jsonschema.ValidationError as e:
             raise HTTPException(
-                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"Document metadata is not valid: {str(e)}"
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Document metadata is not valid: {str(e)}"
             ) from e
 
     async def _upload_attachment(self, folder: str, attachment: UploadFile) -> str:
         bucket = await self._file_storage.get_bucket()
         basename, ext = os.path.splitext(attachment.filename)
-        filename = hashlib.sha1(
-            basename.lower().encode()
-        ).hexdigest() + ext
+        filename = hashlib.sha1(basename.lower().encode()).hexdigest() + ext
         file_metadata = await self._file_storage.put_file(
             bucket,
             filepath=os.path.join("documents", folder, filename),
@@ -296,9 +292,7 @@ class DocumentService:
         """
         return [
             _Document.from_entity(entity, self._file_storage)
-            for entity in await self._repository.get_by_ids(
-                set(document_ids)
-            )
+            for entity in await self._repository.get_by_ids(set(document_ids))
         ]
 
     @transaction

@@ -61,12 +61,12 @@ async def _is_table_exist(session: AsyncSession, table_name: str) -> bool:
     )
 
 
-class _EntityBase(DeclarativeBase):
-    ...
+class _EntityBase(DeclarativeBase): ...
 
 
 class IndexEntity(_EntityBase):
-    """ Information about indexes that exist in the system. """
+    """Information about indexes that exist in the system."""
+
     __tablename__ = "_indexes"
 
     channel_key: Mapped[str] = mapped_column(String, nullable=False)
@@ -74,9 +74,7 @@ class IndexEntity(_EntityBase):
     table_name: Mapped[str] = mapped_column(String, nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default={})
 
-    __table_args__ = (
-        PrimaryKeyConstraint("channel_key", "index_name"),
-    )
+    __table_args__ = (PrimaryKeyConstraint("channel_key", "index_name"),)
 
     @classmethod
     @alru_cache()
@@ -92,7 +90,7 @@ class IndexEntity(_EntityBase):
 
 
 class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC):
-    """ Base class for :class:`IndexStorage` implementations that stores index data as postgresql table. """
+    """Base class for :class:`IndexStorage` implementations that stores index data as postgresql table."""
 
     def __init__(self, session_factory: DbSessionFactory, channel_key: str, index_name: str):
         """
@@ -118,34 +116,28 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
             return
 
         async with self._session_factory() as session:
-            await session.execute(
-                insert(table), rows
-            )
+            await session.execute(insert(table), rows)
 
     async def remove(self, *documents: int):
-        """ Remove index records for documents with given IDs. """
+        """Remove index records for documents with given IDs."""
         table = await self._get_table()
 
         async with self._session_factory() as session:
             await session.execute(
-                delete(table).where(
-                    self._get_documents_filtering_clause(table, *documents)
-                )
+                delete(table).where(self._get_documents_filtering_clause(table, *documents))
             )
 
     def export(self, *documents: int) -> AsyncIterable[IndexRecord[IndexT]]:
-        """ Export index records for documents with given IDs. """
+        """Export index records for documents with given IDs."""
         return self._get_all_records(*documents)
 
     @staticmethod
     def _get_documents_filtering_clause(table: Table, *document_ids: int) -> ColumnElement[bool]:
-        """ Return expression to use in `where` clause to apply filtering of given documents. """
+        """Return expression to use in `where` clause to apply filtering of given documents."""
         return func.cast(
             table.c.metadata["document_id"].astext,
             INTEGER,
-        ).in_(
-            document_ids
-        )
+        ).in_(document_ids)
 
     async def _get_all_records(self, *documents: int) -> AsyncIterable[IndexRecord[IndexT]]:
         table = await self._get_table()
@@ -155,9 +147,7 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
                 select(
                     table.c.index,
                     table.c.metadata,
-                ).where(
-                    self._get_documents_filtering_clause(table, *documents)
-                )
+                ).where(self._get_documents_filtering_clause(table, *documents))
             )
             for index, metadata in result:
                 yield IndexRecord.model_validate({
@@ -166,7 +156,7 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
                 })
 
     async def _get_table(self) -> Table:
-        """ Returns a table with this index's data. """
+        """Returns a table with this index's data."""
         table_name = await self._get_table_name()
 
         async with _schema_lock:
@@ -196,14 +186,12 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
 
     @retry(stop=stop_after_attempt(10), retry=retry_if_exception_type(IntegrityError))
     async def _get_table_name(self) -> str:
-        """ Returns a name of database table with index data. """
+        """Returns a name of database table with index data."""
         await IndexEntity.ensure_table_exists(self._session_factory)
 
         async with self._session_factory() as session, _schema_lock:
             index_entity = await session.scalar(
-                select(
-                    IndexEntity
-                ).where(
+                select(IndexEntity).where(
                     IndexEntity.channel_key == self._channel_key,
                     IndexEntity.index_name == self._index_name,
                 )
@@ -230,17 +218,19 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
     @property
     @abstractmethod
     def _index_metadata(self) -> dict[str, Any]:
-        """ Additional data that should be associated with index table. """
+        """Additional data that should be associated with index table."""
 
     @abstractmethod
     def _get_index_column_schema(self, table_name: str) -> Collection[SchemaItem]:
-        """ Return schema (column definition and indexes) for `index` column. """
+        """Return schema (column definition and indexes) for `index` column."""
 
 
 class VectorIndexStorage(TableIndexStorage[VectorType]):
-    """ Storage implementation for vector indexes. """
+    """Storage implementation for vector indexes."""
 
-    def __init__(self, session_factory: DbSessionFactory, channel_key: str, index_name: str, vector_length: int):
+    def __init__(
+        self, session_factory: DbSessionFactory, channel_key: str, index_name: str, vector_length: int
+    ):
         """
         :param session_factory: callable that returns database session
         :param channel_key: the key of the channel
@@ -271,29 +261,26 @@ class VectorIndexStorage(TableIndexStorage[VectorType]):
 
         async with self._session_factory() as session:
             result = await session.scalars(
-                select(table.c.metadata).where(
+                select(table.c.metadata)
+                .where(
                     self._get_documents_filtering_clause(table, *documents)
-                    if documents is not None else true()
-                ).order_by(
-                    table.c.index.cosine_distance(query)
-                ).limit(
-                    bindparam("limit", limit)
+                    if documents is not None
+                    else true()
                 )
+                .order_by(table.c.index.cosine_distance(query))
+                .limit(bindparam("limit", limit))
             )
             return [IndexedEntityMeta.model_validate(raw_meta) for raw_meta in result]
 
 
 class TextIndexStorageOptions(BaseModel, ABC):
-    """ Storage configuration for text indexes stored as postgresql tables. """
+    """Storage configuration for text indexes stored as postgresql tables."""
+
     language: str
 
     @classmethod
     async def get_dynamic_model(cls, session: AsyncSession) -> type["TextIndexStorageOptions"]:
-        languages = tuple(
-            await session.scalars(
-                text("select cfgname from pg_ts_config")
-            )
-        )
+        languages = tuple(await session.scalars(text("select cfgname from pg_ts_config")))
         assert "english" in languages
 
         # noinspection PyTypeHints
@@ -305,13 +292,15 @@ class TextIndexStorageOptions(BaseModel, ABC):
             __doc__=TextIndexStorageOptions.__doc__,
             language=Annotated[
                 languages_type,
-                Field("english", description="Value of language to use by postgresql full-text search index.")
-            ]
+                Field(
+                    "english", description="Value of language to use by postgresql full-text search index."
+                ),
+            ],
         )
 
 
 class TextIndexStorage(TableIndexStorage[TextType]):
-    """ Storage implementation for text indexes. """
+    """Storage implementation for text indexes."""
 
     def __init__(
         self,
@@ -340,7 +329,7 @@ class TextIndexStorage(TableIndexStorage[TextType]):
                 f"idx__{table_name}__index",
                 text(f"to_tsvector('{self._options.language}', index)"),
                 postgresql_using="gin",
-            )
+            ),
         ]
 
     @log_execution_time(logger)
@@ -363,15 +352,15 @@ class TextIndexStorage(TableIndexStorage[TextType]):
                 select(
                     table.c.metadata,
                     func.ts_rank_cd(ts_vector, ts_query).label("rank"),
-                ).where(
-                    self._get_documents_filtering_clause(table, *documents)
-                    if documents is not None else true(),
-                    ts_vector.bool_op("@@")(ts_query),
-                ).order_by(
-                    text("rank desc")
-                ).limit(
-                    bindparam("limit", limit)
                 )
+                .where(
+                    self._get_documents_filtering_clause(table, *documents)
+                    if documents is not None
+                    else true(),
+                    ts_vector.bool_op("@@")(ts_query),
+                )
+                .order_by(text("rank desc"))
+                .limit(bindparam("limit", limit))
             )
             return [IndexedEntityMeta.model_validate(raw_meta) for raw_meta, _ in result]
 
@@ -392,8 +381,8 @@ class PgvectorIndexStorageOptions(BaseModel):
                 text_model,
                 Field(
                     text_default,
-                    description="Options for text storage (used only if selected indexer produces text)."
-                )
+                    description="Options for text storage (used only if selected indexer produces text).",
+                ),
             ],
         )
 
@@ -401,14 +390,14 @@ class PgvectorIndexStorageOptions(BaseModel):
 class PgvectorIndexStorageBackend[StorageOptionsT: PgvectorIndexStorageOptions](
     IndexStorageBackend[StorageOptionsT]
 ):
-    """ Storage backend that stores indexes as tables in postgresql/pgvector database. """
+    """Storage backend that stores indexes as tables in postgresql/pgvector database."""
 
     _storage_options_model: type[PgvectorIndexStorageOptions] = PgvectorIndexStorageOptions
     _storage_options_default: PgvectorIndexStorageOptions
 
     @classmethod
     async def create(cls, session_factory: DbSessionFactory) -> Self:
-        """ Create instance of the class and perform its initialization """
+        """Create instance of the class and perform its initialization"""
         instance = cls(session_factory)
         await instance._initialize()
         return instance
@@ -421,9 +410,7 @@ class PgvectorIndexStorageBackend[StorageOptionsT: PgvectorIndexStorageOptions](
         # todo: check `vector` extension (and if it is missing - try to create it)
 
         async with self._session_factory() as session:
-            self._storage_options_model = await PgvectorIndexStorageOptions.get_dynamic_model(
-                session
-            )
+            self._storage_options_model = await PgvectorIndexStorageOptions.get_dynamic_model(session)
             self._storage_options_default = self._storage_options_model.model_validate({})
 
             await self._migrate_indexes(session)
@@ -489,9 +476,7 @@ async def _unify_index_column_names(session: AsyncSession):
         )
     ):
         logger.info(f"{table_name}: rename column '{column_name}'")
-        await session.execute(
-            DDL(f"alter table {table_name} rename column {column_name} to index")
-        )
+        await session.execute(DDL(f"alter table {table_name} rename column {column_name} to index"))
 
 
 async def _ensure_metadata_column(session: AsyncSession):
@@ -513,10 +498,14 @@ async def _ensure_metadata_column(session: AsyncSession):
 
         for statement in [
             DDL(f"alter table {table_name} add column metadata jsonb"),
-            DDL(f"update {table_name} set metadata = jsonb_build_object('document_id', document_id, 'chunk_id', chunk_id, 'chunk_type', chunk_type)"),
+            DDL(
+                f"update {table_name} set metadata = jsonb_build_object('document_id', document_id, 'chunk_id', chunk_id, 'chunk_type', chunk_type)"
+            ),
             DDL(f"alter table {table_name} alter column metadata set not null"),
             DDL(f"drop index if exists idx__{table_name}__documents"),
-            DDL(f"create index if not exists idx__{table_name}__documents on {table_name} (((metadata->>'document_id')::int))"),
+            DDL(
+                f"create index if not exists idx__{table_name}__documents on {table_name} (((metadata->>'document_id')::int))"
+            ),
             DDL(f"alter table {table_name} drop column document_id"),
             DDL(f"alter table {table_name} drop column chunk_id"),
             DDL(f"alter table {table_name} drop column chunk_type"),

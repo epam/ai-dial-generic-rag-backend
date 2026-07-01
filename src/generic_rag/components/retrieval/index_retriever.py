@@ -10,6 +10,7 @@ class IndexRetriever(BaseRetriever):
     """
     Retriever that returns chunks found by given index as separate langchain documents.
     """
+
     index: ChunkIndex = Field(repr=False)
     documents: list[int] | None = None
     top_k: int
@@ -34,7 +35,7 @@ class IndexRetriever(BaseRetriever):
                 metadata={
                     "identity": chunk.get_identity(),
                     "chunks": [chunk],
-                }
+                },
             )
             for chunk_ref in chunk_refs
             if (chunk := chunks.get(chunk_ref)) is not None

@@ -13,12 +13,12 @@ tracer = get_tracer(__name__)
 logger = logging.getLogger(__name__)
 
 
-class FailedRetrieverError(Exception):
-    ...
+class FailedRetrieverError(Exception): ...
 
 
 class RetrievalStage(BaseRetriever):
-    """ Represents dedicated stage of retrieval process. """
+    """Represents dedicated stage of retrieval process."""
+
     stage_name: str
     retriever: BaseRetriever = Field(repr=False)
     listener: RetrievalStageListener = Field(repr=False)

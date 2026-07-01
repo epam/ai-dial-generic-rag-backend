@@ -15,7 +15,7 @@ class TokenProvider(ABC):
     @property
     @abstractmethod
     def token(self) -> str | None:
-        """ Return value of access token. """
+        """Return value of access token."""
 
 
 class MsiTokenProvider(TokenProvider):

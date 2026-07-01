@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
-    """ Implements the logic of getting filters configuration to be used by :class:`DocumentSelector`. """
+    """Implements the logic of getting filters configuration to be used by :class:`DocumentSelector`."""
 
     _listener: RetrievalStageListener = RetrievalStageListener()
 
@@ -32,17 +32,16 @@ class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[Con
                 raise
 
     @abstractmethod
-    async def _get_document_subset(self) -> list[int] | None:
-        ...
+    async def _get_document_subset(self) -> list[int] | None: ...
 
     def use_listener(self, listener: RetrievalStageListener) -> Self:
-        """ Use given retrieval event listener. """
+        """Use given retrieval event listener."""
         self._listener = listener
         return self
 
 
 class AllDocumentsDocumentSelector(DocumentSelector):
-    """ Always use all available documents. """
+    """Always use all available documents."""
 
     async def _get_document_subset(self) -> list[int] | None:
         return None
@@ -53,14 +52,14 @@ class ExactDocumentsDocumentSelectorConfig(BaseModel):
 
 
 class ExactDocumentsDocumentSelector(DocumentSelector[ExactDocumentsDocumentSelectorConfig]):
-    """ Restrict search to specific documents. """
+    """Restrict search to specific documents."""
 
     async def _get_document_subset(self) -> list[int] | None:
         return self.config.document_ids
 
 
 class MetadataDocumentSelector[ConfigT: BaseModel = BaseModel](DocumentSelector[ConfigT], ABC):
-    """ Restrict search to documents whose metadata matches given criteria. """
+    """Restrict search to documents whose metadata matches given criteria."""
 
     @inject
     def __init__(self, config: ConfigT, channel: Channel = NotImplemented):
@@ -76,29 +75,27 @@ class MetadataDocumentSelector[ConfigT: BaseModel = BaseModel](DocumentSelector[
             return None
 
         self._listener.log_message(
-            f"Provided configuration:\n"
-            f"```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```"
+            f"Provided configuration:\n```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```"
         )
 
         async with get_current_session() as session:
             cursor = await session.scalars(query)
             result = list(cursor.all())
 
-        self._listener.log_message(
-            f"Found {len(result)} matching document(s)."
-        )
+        self._listener.log_message(f"Found {len(result)} matching document(s).")
 
         return result
 
     @abstractmethod
-    async def _get_matcher_config(self) -> DocumentMatcherConfig:
-        ...
+    async def _get_matcher_config(self) -> DocumentMatcherConfig: ...
 
 
 class ExplicitDocumentSelectorConfig(BaseModel, ABC):
     @classmethod
     @inject
-    async def get_dynamic_model(cls, channel: Channel | None = None) -> type["ExplicitDocumentSelectorConfig"]:
+    async def get_dynamic_model(
+        cls, channel: Channel | None = None
+    ) -> type["ExplicitDocumentSelectorConfig"]:
         if channel is not None:
             # noinspection PyTypeChecker
             return create_model(
@@ -107,7 +104,7 @@ class ExplicitDocumentSelectorConfig(BaseModel, ABC):
                 __base__=(
                     cls,
                     await DocumentMatcherConfig.get_dynamic_model(),
-                )
+                ),
             )
         return cls
 
@@ -115,7 +112,7 @@ class ExplicitDocumentSelectorConfig(BaseModel, ABC):
 class ExplicitDocumentSelector[ConfigT: ExplicitDocumentSelectorConfig = ExplicitDocumentSelectorConfig](
     MetadataDocumentSelector[ConfigT]
 ):
-    """ Restrict search to documents whose metadata matches given criteria, defined explicitly on each request. """
+    """Restrict search to documents whose metadata matches given criteria, defined explicitly on each request."""
 
     async def _get_matcher_config(self) -> DocumentMatcherConfig:
         if isinstance(self.config, DocumentMatcherConfig):

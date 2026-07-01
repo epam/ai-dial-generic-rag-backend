@@ -27,7 +27,7 @@ class TextEmbeddingsConfig(BaseModel):
 
 
 class TextEmbeddingsIndexer(TextIndexer[VectorType, TextEmbeddingsConfig]):
-    """ Represent source texts as vectors calculated with text embeddings model. """
+    """Represent source texts as vectors calculated with text embeddings model."""
 
     @inject
     def __init__(self, config: TextEmbeddingsConfig, model_provider: ModelProvider):
@@ -41,9 +41,9 @@ class TextEmbeddingsIndexer(TextIndexer[VectorType, TextEmbeddingsConfig]):
     async def index_query(self, query: str) -> VectorType:
         return await self._model.aembed_query(query)
 
-    async def _index_texts(self, texts: list[str], record_metas: list[IndexedEntityMeta]) -> Collection[
-        IndexRecord[VectorType]
-    ]:
+    async def _index_texts(
+        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+    ) -> Collection[IndexRecord[VectorType]]:
         embeddings = await self._model.aembed_documents(texts, chunk_size=250)
 
         return [

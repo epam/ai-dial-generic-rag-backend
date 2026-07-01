@@ -21,7 +21,7 @@ class PageExtractorConfig(BaseModel):
 
 
 class PageExtractor(DocumentParser[PageExtractorConfig]):
-    """ Parser that extracts images of document pages. """
+    """Parser that extracts images of document pages."""
 
     async def extract_chunks(self, document: Document) -> AsyncIterable[ImageChunk]:
         return self._extract_chunks_gen(document)

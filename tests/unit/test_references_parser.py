@@ -12,10 +12,7 @@ async def _achunks(chunks: list[str]) -> AsyncIterator[str]:
 
 async def _collect(chunks: list[str]) -> list[tuple[str | None, int | None]]:
     parser = ReferencesParser()
-    return [
-        (out.content, out.reference)
-        async for out in parser.atransform(_achunks(chunks))
-    ]
+    return [(out.content, out.reference) async for out in parser.atransform(_achunks(chunks))]
 
 
 @pytest.mark.parametrize("text", ["", "anything", "Hello <[1]> world"])

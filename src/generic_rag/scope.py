@@ -16,7 +16,8 @@ class ScopeName(StrEnum):
 
 @dataclass
 class ChannelBindings:
-    """ Utility class containing `channel` scope binding. """
+    """Utility class containing `channel` scope binding."""
+
     request_api_key: RequestApiKey
     application_id: DialApplicationId | None
 

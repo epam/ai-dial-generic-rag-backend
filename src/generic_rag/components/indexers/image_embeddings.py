@@ -8,7 +8,15 @@ from functools import cache
 from injection import inject
 from pydantic import BaseModel, Field
 
-from generic_rag.types import AnyChunk, ImageChunk, IndexedEntityMeta, Indexer, IndexRecord, ModelProvider, VectorType
+from generic_rag.types import (
+    AnyChunk,
+    ImageChunk,
+    IndexedEntityMeta,
+    Indexer,
+    IndexRecord,
+    ModelProvider,
+    VectorType,
+)
 from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
@@ -30,7 +38,7 @@ class ImageEmbeddingsConfig(BaseModel):
 
 
 class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
-    """ Represent source images as vectors calculated with multimodal embeddings model. """
+    """Represent source images as vectors calculated with multimodal embeddings model."""
 
     @staticmethod
     @cache
@@ -51,9 +59,9 @@ class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
         return await self._model.aembed_query(query)
 
     @log_execution_time(logger)
-    async def index_data(self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]) -> Collection[
-        IndexRecord[VectorType]
-    ]:
+    async def index_data(
+        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+    ) -> Collection[IndexRecord[VectorType]]:
         async def _embed_image_task(chunk: ImageChunk, meta: IndexedEntityMeta):
             async with self._semaphore:
                 return await self._embed_image(chunk, meta)

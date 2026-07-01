@@ -16,8 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from generic_rag.types import DocumentStatus, ImageType
 
 
-class _EntityBase(DeclarativeBase):
-    ...
+class _EntityBase(DeclarativeBase): ...
 
 
 class DocumentEntity(_EntityBase):
@@ -35,11 +34,11 @@ class DocumentEntity(_EntityBase):
     status: Mapped[DocumentStatus] = mapped_column(Enum(DocumentStatus, native_enum=False, length=15))
 
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        PrimaryKeyConstraint("channel_key", "document_id"),
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    __table_args__ = (PrimaryKeyConstraint("channel_key", "document_id"),)
 
 
 class TextChunkEntity(_EntityBase):

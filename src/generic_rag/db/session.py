@@ -38,6 +38,7 @@ async def _create_session() -> AsyncGenerator[AsyncSession]:
 def transaction(target):
     """Decorator for enabling automatic transaction management."""
     if inspect.isasyncgenfunction(target):
+
         @functools.wraps(target)
         async def wrapper(*args, **kwargs):
             async with _create_session():
@@ -47,6 +48,7 @@ def transaction(target):
         return wrapper
 
     if inspect.iscoroutinefunction(target):
+
         @functools.wraps(target)
         async def wrapper(*args, **kwargs):
             async with _create_session():

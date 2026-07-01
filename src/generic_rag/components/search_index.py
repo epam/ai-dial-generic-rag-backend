@@ -31,16 +31,14 @@ class StorageBackendDiscriminator(BaseModel):
 
 
 class IndexConfig(BaseModel, ABC):
-    """ :class:`Index` configuration model. """
-    display_name: str = Field(
-        ...,
-        description="Human-friendly name of the index."
-    )
+    """:class:`Index` configuration model."""
+
+    display_name: str = Field(..., description="Human-friendly name of the index.")
     indexer: BaseModel
     storage: StorageBackendDiscriminator
     default_limit: int = Field(
         DEFAULT_RESULTS_LIMIT,
-        description="Default value for maximum number of results to be returned by search within this index."
+        description="Default value for maximum number of results to be returned by search within this index.",
     )
 
     @classmethod
@@ -61,7 +59,7 @@ class IndexConfig(BaseModel, ABC):
                         StorageBackendDiscriminator.__name__,
                         __base__=StorageBackendDiscriminator,
                         backend=Literal[key],
-                    )
+                    ),
                 ),
                 __doc__=backend.storage_options_model.__doc__,
             )
@@ -85,13 +83,15 @@ class IndexConfig(BaseModel, ABC):
                     default=storage_model_default,
                     discriminator="backend",
                     description="Configuration of index storage for given index.",
-                )
+                ),
             ],
         )
 
 
-class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](ConfigurableComponent[ConfigT]):
-    """ Component that allows to perform relevancy search of previously indexed data. """
+class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
+    ConfigurableComponent[ConfigT]
+):
+    """Component that allows to perform relevancy search of previously indexed data."""
 
     _storage: IndexStorage[IndexT]
 
@@ -104,7 +104,7 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](C
 
     @classmethod
     async def create_async[T: Index](cls: type[T], config: ConfigT, **kwargs) -> T:
-        """ Create instance of this component for given configuration. """
+        """Create instance of this component for given configuration."""
         channel_key = kwargs.get("channel_key")
         index_name = kwargs.get("index_name")
 
@@ -131,30 +131,32 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](C
 
     @property
     def index_name(self) -> str:
-        """ Name of the index. """
+        """Name of the index."""
         return self._index_name
 
     @property
     def display_name(self):
-        """ Human-friendly name of the index. """
+        """Human-friendly name of the index."""
         return self._display_name
 
     @property
     def default_limit(self):
-        """ Default value for maximum number of results to be returned by search within this index. """
+        """Default value for maximum number of results to be returned by search within this index."""
         return self._default_limit
 
     @property
     def storage(self) -> IndexStorage[IndexT]:
-        """ Storage of this index data """
+        """Storage of this index data"""
         return self._storage
 
 
 class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index[IndexT]):
-    """ Index allowing relevance search on top of document chunks. """
+    """Index allowing relevance search on top of document chunks."""
 
     @log_execution_time(logger)
-    async def search(self, query: str, limit: int, documents: Collection[int] | None = None) -> Collection[ChunkRef]:
+    async def search(
+        self, query: str, limit: int, documents: Collection[int] | None = None
+    ) -> Collection[ChunkRef]:
         """
         Search records within the index.
 
@@ -175,10 +177,7 @@ class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index
         :param chunks: chunks to update the index with
         """
         data = [
-            (chunk, IndexedEntityMeta.model_validate(
-                chunk.get_identity().model_dump()
-            ))
-            for chunk in chunks
+            (chunk, IndexedEntityMeta.model_validate(chunk.get_identity().model_dump())) for chunk in chunks
         ]
 
         records = await self._indexer.index_data(data)

@@ -33,12 +33,7 @@ def _text_element(text: str) -> dict:
 
 
 def _image_element(image_url: str) -> dict:
-    return {
-        "type": "image_url",
-        "image_url": {
-            "url": image_url
-        }
-    }
+    return {"type": "image_url", "image_url": {"url": image_url}}
 
 
 def _format_attributes(i: int, chunk: AnyChunk, source_attributes: list[str]) -> str:
@@ -51,9 +46,7 @@ def _format_attributes(i: int, chunk: AnyChunk, source_attributes: list[str]) ->
     ]
     if source_attributes:
         attributes += [(name, str(chunk_source.source_metadata.get(name, ""))) for name in source_attributes]
-    return " ".join(
-        [f"{key}='{value}'" for key, value in attributes if value is not None]
-    )
+    return " ".join([f"{key}='{value}'" for key, value in attributes if value is not None])
 
 
 class DefaultChatPromptChainInputSchema(BaseModel):
@@ -62,7 +55,8 @@ class DefaultChatPromptChainInputSchema(BaseModel):
 
 
 class DefaultAnswerGeneratorConfig(BaseModel):
-    """ Configuration for the chat chain which generates the answer for the user question. """
+    """Configuration for the chat chain which generates the answer for the user question."""
+
     llm: LlmConfig = Field(
         default=LlmConfig(),
         description="Configuration for the LLM used in the query chain.",
@@ -76,12 +70,12 @@ class DefaultAnswerGeneratorConfig(BaseModel):
         description=(
             "Additional instructions for LLM about document's metadata fields. When specified, these "
             "instructions and corresponding metadata properties will be added to default system prompt."
-        )
+        ),
     )
 
 
 class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[BaseMessage]]):
-    """ A chain that creates messages to be sent in LLM. """
+    """A chain that creates messages to be sent in LLM."""
 
     def __init__(self, generation_config: DefaultAnswerGeneratorConfig, metadata_schema: dict[str, Any]):
         self._generation_config = generation_config
@@ -99,24 +93,22 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
                     self._source_attributes.append(key)
                     extra_llm_notes.append(value)
 
-            self._system_prompt_template = DefaultGenerationPrompt.get_prompt(
-                extra_llm_notes
-            )
+            self._system_prompt_template = DefaultGenerationPrompt.get_prompt(extra_llm_notes)
         else:
             self._system_prompt_template = DefaultGenerationPrompt.get_prompt()
 
     def invoke(self, *args, **kwargs) -> list[BaseMessage]:
         raise NotImplementedError()
 
-    async def ainvoke(self, chain_input: DefaultChatPromptChainInputSchema, *args, **kwargs) -> list[BaseMessage]:
+    async def ainvoke(
+        self, chain_input: DefaultChatPromptChainInputSchema, *args, **kwargs
+    ) -> list[BaseMessage]:
         docs_message = await self._create_docs_message(chain_input.found_items)
 
-        template = ChatPromptTemplate.from_messages(
-            [
-                SystemMessagePromptTemplate.from_template(self._system_prompt_template),
-                HumanMessagePromptTemplate.from_template("{query}"),
-            ]
-        )
+        template = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(self._system_prompt_template),
+            HumanMessagePromptTemplate.from_template("{query}"),
+        ])
 
         prompt_messages = template.invoke(chain_input).to_messages()
         assert len(prompt_messages) > 1
@@ -158,7 +150,7 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
 
 
 class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
-    """ Generates answer with LLM based on chunks returned by configured retriever. """
+    """Generates answer with LLM based on chunks returned by configured retriever."""
 
     @inject
     def __init__(self, config: DefaultAnswerGeneratorConfig, channel: Channel, model_provider: ModelProvider):
@@ -174,9 +166,7 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
         :param retriever: the :class:`Retriever` used to find relevant chunk information
         :param callback: a callback to catch answer as it is generated
         """
-        llm = self._model_provider.get_llm(
-            self.config.llm
-        )
+        llm = self._model_provider.get_llm(self.config.llm)
         found_items: list[LangchainDocument] = await retriever.invoke(query)
 
         generation_chain = (

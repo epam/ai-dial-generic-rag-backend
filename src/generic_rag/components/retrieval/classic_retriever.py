@@ -36,6 +36,7 @@ class ClassicIndexResultsPostprocessor(BaseRetriever):
       DIAL RAG where each retriever always return text chunks)
 
     """
+
     retriever: IndexRetriever = Field(repr=False)
     chunk_service: ChunkService = Field(repr=False)
     result_limit: int
@@ -60,7 +61,9 @@ class ClassicIndexResultsPostprocessor(BaseRetriever):
                 break
         return result
 
-    async def _postprocess_results(self, retrieved_docs: list[LangchainDocument]) -> AsyncGenerator[LangchainDocument]:
+    async def _postprocess_results(
+        self, retrieved_docs: list[LangchainDocument]
+    ) -> AsyncGenerator[LangchainDocument]:
         text_chunks_by_page = await self._collect_text_chunks_of_page_images(retrieved_docs)
 
         for doc in retrieved_docs:
@@ -87,7 +90,7 @@ class ClassicIndexResultsPostprocessor(BaseRetriever):
                     metadata=dict(
                         retrieval_type=RetrievalType.text,
                         **doc.metadata,
-                    )
+                    ),
                 )
 
             else:
@@ -98,12 +101,12 @@ class ClassicIndexResultsPostprocessor(BaseRetriever):
                     metadata=dict(
                         retrieval_type=RetrievalType.unknown,
                         **doc.metadata,
-                    )
+                    ),
                 )
 
-    async def _collect_text_chunks_of_page_images(self, retrieved_docs: list[LangchainDocument]) -> dict[
-        tuple[int, int], list[TextChunk]
-    ]:
+    async def _collect_text_chunks_of_page_images(
+        self, retrieved_docs: list[LangchainDocument]
+    ) -> dict[tuple[int, int], list[TextChunk]]:
         doc_pages = [
             (chunk.document_id, chunk.page_number)
             for doc in retrieved_docs
@@ -140,6 +143,7 @@ class ClassicAggregatedResultPostprocessor(BaseRetriever):
     `ClassicIndexRetrieverResultsPostprocessor` retriever.
 
     """
+
     retriever: BaseRetriever = Field(repr=False)
     chunk_service: ChunkService = Field(repr=False)
     num_page_images_to_use: int
@@ -151,7 +155,9 @@ class ClassicAggregatedResultPostprocessor(BaseRetriever):
         retrieved_docs = await self.retriever.ainvoke(query)
         return [doc async for doc in self._postprocess_results(retrieved_docs)]
 
-    async def _postprocess_results(self, retrieved_docs: list[LangchainDocument]) -> AsyncGenerator[LangchainDocument]:
+    async def _postprocess_results(
+        self, retrieved_docs: list[LangchainDocument]
+    ) -> AsyncGenerator[LangchainDocument]:
         image_by_page = await self._get_image_by_page(retrieved_docs)
         attached_images = set()
 
@@ -166,13 +172,15 @@ class ClassicAggregatedResultPostprocessor(BaseRetriever):
                         "retrieval_type": doc.metadata.get("retrieval_type"),
                         "identity": original_chunk.get_identity(),
                         "chunks": [original_chunk, page_image],
-                    }
+                    },
                 )
                 attached_images.add(image_key)
             else:
                 yield doc
 
-    async def _get_image_by_page(self, retrieved_docs: list[LangchainDocument]) -> dict[tuple[int, int], ImageChunk]:
+    async def _get_image_by_page(
+        self, retrieved_docs: list[LangchainDocument]
+    ) -> dict[tuple[int, int], ImageChunk]:
         required_pages: set[tuple[int, int]] = set()
         for document_id, page_number in self._collect_pages(retrieved_docs):
             required_pages.add((document_id, page_number))
@@ -181,7 +189,9 @@ class ClassicAggregatedResultPostprocessor(BaseRetriever):
 
         result: dict[tuple[int, int], ImageChunk] = {}
 
-        for chunk in await self.chunk_service.get_chunks_by_pages(*required_pages, chunk_type=ChunkType.image):
+        for chunk in await self.chunk_service.get_chunks_by_pages(
+            *required_pages, chunk_type=ChunkType.image
+        ):
             assert isinstance(chunk, ImageChunk)
             if chunk.image_type == ImageType.page:
                 result[(chunk.document_id, chunk.page_number)] = chunk
@@ -236,7 +246,7 @@ class ClassicRetriever[ConfigT: ClassicRetrieverConfig = ClassicRetrieverConfig]
                     retriever=intermediate_stages[0].retriever,
                     chunk_service=self._chunk_service,
                     num_page_images_to_use=self.config.num_page_images_to_use,
-                )
+                ),
             )
 
         return self._stage_factory(
@@ -249,11 +259,13 @@ class ClassicRetriever[ConfigT: ClassicRetrieverConfig = ClassicRetrieverConfig]
                 ),
                 chunk_service=self._chunk_service,
                 num_page_images_to_use=self.config.num_page_images_to_use,
-            )
+            ),
         )
 
-    def _create_intermediate_stage(self, index: ChunkIndex, documents: list[int] | None, top_k: int) -> RetrievalStage:
-        """ Create :class:`RetrievalStage` for given index. """
+    def _create_intermediate_stage(
+        self, index: ChunkIndex, documents: list[int] | None, top_k: int
+    ) -> RetrievalStage:
+        """Create :class:`RetrievalStage` for given index."""
         return self._stage_factory(
             index.display_name,
             ClassicIndexResultsPostprocessor.wrap(
@@ -263,5 +275,5 @@ class ClassicRetriever[ConfigT: ClassicRetrieverConfig = ClassicRetrieverConfig]
                     top_k=top_k,
                     chunk_service=self._chunk_service,
                 )
-            )
+            ),
         )

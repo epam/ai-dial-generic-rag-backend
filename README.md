@@ -58,7 +58,7 @@ make run
 ```
 
 - Now you can open <http://localhost:3000> for chat and <http://localhost:5000/docs> for swagger documentation
-- Use `make stop` to stop the containers that continue running in background
+- Use `make down` to stop the containers that continue running in background
 - Use `make cleanup` to clean data volumes created during run
 - If you want to add new DIAL application of Generic RAG type (with different channel configuration), you can
   add it into `applications` section of `./dial_conf/config-template.json` file (see existing applications as references).
@@ -154,8 +154,7 @@ The repository already has preconfigured example application `generic-rag-exampl
 > natively, and the `extra_hosts: host.docker.internal:host-gateway` directive overrides it with an
 > incorrect IP (`172.17.0.1`), preventing the core container from reaching the app on host machine.
 
-- Default value of `application_id` that you see in swagger matches the `application_id` of the example app defined in DIAL config
-- Use `make stop` to stop the containers that continue running in background
+- Use `make down` to stop the containers that continue running in background
 - Use `make cleanup` to clean data volumes created during run
 
 ## MCP Server

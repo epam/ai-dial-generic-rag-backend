@@ -37,7 +37,7 @@ def _get_pipeline(lang: LanguageName) -> Language:
 
 
 class TextNormalizer(TextIndexer[TextType, TextNormalizerConfig]):
-    """ Perform text normalization (by removing stopwords and applying stemming). """
+    """Perform text normalization (by removing stopwords and applying stemming)."""
 
     @property
     def _pipeline(self) -> Language:
@@ -46,19 +46,17 @@ class TextNormalizer(TextIndexer[TextType, TextNormalizerConfig]):
     async def index_query(self, query: str) -> TextType:
         return self._normalize_text(query)
 
-    async def _index_texts(self, texts: list[str], record_metas: list[IndexedEntityMeta]) -> Collection[
-        IndexRecord[TextType]
-    ]:
+    async def _index_texts(
+        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+    ) -> Collection[IndexRecord[TextType]]:
         return [
             IndexRecord(
                 index=self._normalize_text(item),
                 metadata=meta,
-            ) for item, meta in zip(texts, record_metas, strict=True)
+            )
+            for item, meta in zip(texts, record_metas, strict=True)
         ]
 
     def _normalize_text(self, text: str):
         doc = self._pipeline(text)
-        return " ".join([
-            token.lemma_ for token in doc
-            if not (token.is_stop or token.is_punct)
-        ])
+        return " ".join([token.lemma_ for token in doc if not (token.is_stop or token.is_punct)])

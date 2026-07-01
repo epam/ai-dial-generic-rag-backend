@@ -19,7 +19,8 @@ from generic_rag.types import RetrievalStageListener, Retriever
 
 
 class AbstractRetrieverRequest(BaseModel, ABC):
-    """ Request-specific options of :class:`AbstractRetriever`. """
+    """Request-specific options of :class:`AbstractRetriever`."""
+
     top_k: dict[str, int | None]
 
     @classmethod
@@ -28,7 +29,7 @@ class AbstractRetrieverRequest(BaseModel, ABC):
         top_k_fields = {
             idx.index_name: Annotated[
                 NotRequired[NonNegativeInt],
-                Field(description=f"Maximum number of results to be returned by `{idx.index_name}` index.")
+                Field(description=f"Maximum number of results to be returned by `{idx.index_name}` index."),
             ]
             for idx in await channel.get_indexes()
         }
@@ -49,7 +50,7 @@ class AbstractRetrieverRequest(BaseModel, ABC):
                         "Overrides for maximum number of results to be returned by given index. For the index "
                         "to be enabled for search corresponding non-zero value should be explicitly defined."
                     ),
-                )
+                ),
             ],
         )
 
@@ -60,16 +61,17 @@ class AbstractRetrieverRequest(BaseModel, ABC):
 
 
 class AbstractRetrieverConfig(BaseModel, ABC):
-    """ :class:`AbstractRetriever` configuration model. """
+    """:class:`AbstractRetriever` configuration model."""
+
     document_selector: BaseModel
 
     @classmethod
     @inject
     async def get_dynamic_model(cls, channel: Channel = None) -> type["AbstractRetrieverConfig"]:
         document_selector_model = await DocumentSelector.get_aggregated_config_model()
-        document_selector_default = TypeAdapter(document_selector_model).validate_python(
-            {"type": AllDocumentsDocumentSelector.get_qualifier()}
-        )
+        document_selector_default = TypeAdapter(document_selector_model).validate_python({
+            "type": AllDocumentsDocumentSelector.get_qualifier()
+        })
 
         base = cls if channel is None else (cls, await AbstractRetrieverRequest.get_dynamic_model(channel))
 
@@ -81,16 +83,14 @@ class AbstractRetrieverConfig(BaseModel, ABC):
                 document_selector_model,
                 Field(
                     document_selector_default,
-                    description=(
-                        "Allows to restrict search scope by selecting subset of documents."
-                    )
-                )
-            ]
+                    description=("Allows to restrict search scope by selecting subset of documents."),
+                ),
+            ],
         )
 
 
 class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConfig](Retriever[ConfigT], ABC):
-    """ Base class for retrievers implementation. """
+    """Base class for retrievers implementation."""
 
     @inject
     def __init__(self, config: ConfigT, channel: Channel, chunk_sources_manager: ChunkSourcesManager):
@@ -105,9 +105,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
 
         :param query: the user query used for search
         """
-        document_selector = DocumentSelector.create(
-            self.config.document_selector
-        ).use_listener(
+        document_selector = DocumentSelector.create(self.config.document_selector).use_listener(
             self._listener
         )
         documents = await document_selector.get_document_subset()
@@ -115,17 +113,16 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
         if documents is not None and len(documents) < 1:
             return []
 
-        request_config = cast(AbstractRetrieverRequest, self.config) \
-            if isinstance(self.config, AbstractRetrieverRequest) \
+        request_config = (
+            cast(AbstractRetrieverRequest, self.config)
+            if isinstance(self.config, AbstractRetrieverRequest)
             else await AbstractRetrieverRequest.get_default_value(self._channel)
+        )
 
         if intermediate_stages := [
-            self._create_intermediate_stage(
-                index,
-                documents,
-                request_config.top_k.get(index.index_name)
-            )
-            for index in await self._channel.get_indexes() if request_config.top_k.get(index.index_name)
+            self._create_intermediate_stage(index, documents, request_config.top_k.get(index.index_name))
+            for index in await self._channel.get_indexes()
+            if request_config.top_k.get(index.index_name)
         ]:
             final_stage = self._create_final_stage(intermediate_stages)
             return await final_stage.ainvoke(query)
@@ -133,17 +130,17 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
         return []
 
     def use_listener(self, listener: RetrievalStageListener) -> Self:
-        """ Use given retrieval event listener. """
+        """Use given retrieval event listener."""
         self._listener = listener
         return self
 
     @abstractmethod
-    def _create_final_stage(self, intermediate_stages: list[RetrievalStage]) -> RetrievalStage:
-        ...
+    def _create_final_stage(self, intermediate_stages: list[RetrievalStage]) -> RetrievalStage: ...
 
     @abstractmethod
-    def _create_intermediate_stage(self, index: ChunkIndex, documents: list[int] | None, top_k: int) -> RetrievalStage:
-        ...
+    def _create_intermediate_stage(
+        self, index: ChunkIndex, documents: list[int] | None, top_k: int
+    ) -> RetrievalStage: ...
 
     def _stage_factory(self, stage_name: str, retriever: BaseRetriever) -> RetrievalStage:
         return RetrievalStage(

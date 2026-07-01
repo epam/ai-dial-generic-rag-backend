@@ -33,14 +33,10 @@ class IndexingService:
             async for chunk in await parser.extract_chunks(document):
                 if isinstance(chunk, TextChunk):
                     last_text_chunk_id += 1
-                    yield chunk.model_copy(
-                        update={"chunk_id": last_text_chunk_id}
-                    )
+                    yield chunk.model_copy(update={"chunk_id": last_text_chunk_id})
                 elif isinstance(chunk, ImageChunk):
                     last_image_chunk_id += 1
-                    yield chunk.model_copy(
-                        update={"chunk_id": last_image_chunk_id}
-                    )
+                    yield chunk.model_copy(update={"chunk_id": last_image_chunk_id})
 
         logger.info(f"extracted {last_text_chunk_id + last_image_chunk_id} chunk(s)")
 

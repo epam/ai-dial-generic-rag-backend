@@ -4,7 +4,9 @@ from typing import Generic, TypeVar, get_args
 from typing_inspect import get_parameters
 
 
-def resolve_generic_arg(cls_or_instance: type | object, target_type: type, index: int) -> type | TypeVar | None:
+def resolve_generic_arg(
+    cls_or_instance: type | object, target_type: type, index: int
+) -> type | TypeVar | None:
     """
     Resolves the concrete type bound to a particular generic type parameter in a class hierarchy.
 

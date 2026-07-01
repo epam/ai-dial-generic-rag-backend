@@ -38,38 +38,21 @@ METADATA_SCHEMA_EXAMPLE = {
     "title": "DocumentMetadataSchemaExample",
     "type": "object",
     "properties": {
-        "publication_type": {
-            "type": "string",
-            "enable_filtering": True
-        },
-        "publication_date": {
-            "type": "string",
-            "format": "date",
-            "enable_filtering": True
-        },
-        "publication_topics": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            },
-            "enable_filtering": True
-        }
+        "publication_type": {"type": "string", "enable_filtering": True},
+        "publication_date": {"type": "string", "format": "date", "enable_filtering": True},
+        "publication_topics": {"type": "array", "items": {"type": "string"}, "enable_filtering": True},
     },
-    "additionalProperties": True
+    "additionalProperties": True,
 }
 
 
 class ProcessingConfig(BaseModel, ABC):
-    """ Options related to processing pipeline of data stored in the channel. """
+    """Options related to processing pipeline of data stored in the channel."""
+
     metadata_schema: dict[str, Any] = Field(
-        create_model(
-            "DefaultMetadataSchema",
-            __config__=ConfigDict(extra="allow")
-        ).model_json_schema(),
+        create_model("DefaultMetadataSchema", __config__=ConfigDict(extra="allow")).model_json_schema(),
         description="JSON schema of metadata that can be associated with documents of this channel",
-        examples=[
-            METADATA_SCHEMA_EXAMPLE
-        ]
+        examples=[METADATA_SCHEMA_EXAMPLE],
     )
     parsers: list[BaseModel]
     indexes: dict[str, IndexConfig]
@@ -94,12 +77,13 @@ class ProcessingConfig(BaseModel, ABC):
                     "JSON Schema: {message} {schema}",
                     {
                         "message": error.message,
-                        "schema": json.dumps(error.schema) if isinstance(error.schema, dict) else ""
+                        "schema": json.dumps(error.schema) if isinstance(error.schema, dict) else "",
                     },
                 ),
                 loc=tuple(error.absolute_path),
                 input=error.instance,
-            ) for error in schema_validator.iter_errors(value)
+            )
+            for error in schema_validator.iter_errors(value)
         ]:
             raise ValidationError.from_exception_data(title="ValidationError", line_errors=line_errors)
 
@@ -122,24 +106,28 @@ class ProcessingConfig(BaseModel, ABC):
                     description=(
                         "List of parsers to use for extracting chunks from documents uploaded to the channel."
                     ),
-                )
+                ),
             ],
             indexes=Annotated[
                 dict[
-                    Annotated[str, Field(
-                        description="Internal name of the index.",
-                        examples=["keyword", "semantic-index"],
-                    )],
-                    index_config_model
+                    Annotated[
+                        str,
+                        Field(
+                            description="Internal name of the index.",
+                            examples=["keyword", "semantic-index"],
+                        ),
+                    ],
+                    index_config_model,
                 ],
                 MinLen(1),
-                Field(description="Configuration of indexes for relevance search.")
-            ]
+                Field(description="Configuration of indexes for relevance search."),
+            ],
         )
 
 
 class RequestConfig(BaseModel, ABC):
-    """ Options related to a request to a channel (like, data retrieval or answering). """
+    """Options related to a request to a channel (like, data retrieval or answering)."""
+
     retriever: BaseModel
     generation: BaseModel
 
@@ -163,7 +151,7 @@ class RequestConfig(BaseModel, ABC):
                 Field(
                     default=generation_config_model_default,
                     description="Configuration for the chat chain which generates the answer for the user question.",
-                )
+                ),
             ],
         )
 
@@ -181,7 +169,7 @@ class RequestConfig(BaseModel, ABC):
 
 
 class ChannelConfig(RequestConfig, ProcessingConfig, ABC):
-    """ Channel configuration schema. """
+    """Channel configuration schema."""
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -215,7 +203,7 @@ class ChannelConfig(RequestConfig, ProcessingConfig, ABC):
 
 
 class Channel:
-    """ Logical concept that represents instance of DIAL application. """
+    """Logical concept that represents instance of DIAL application."""
 
     @classmethod
     async def get_current_channel(cls) -> Self:
@@ -228,19 +216,17 @@ class Channel:
 
     @property
     def channel_key(self):
-        """ Unique key of the channel. """
+        """Unique key of the channel."""
         return self._channel_key
 
     @property
     def metadata_schema(self):
-        """ JSON schema of metadata that can be associated with documents of this channel. """
-        return copy.deepcopy(
-            self._config.metadata_schema
-        )
+        """JSON schema of metadata that can be associated with documents of this channel."""
+        return copy.deepcopy(self._config.metadata_schema)
 
     @cached_property
     def document_parsers(self) -> list[DocumentParser]:
-        """ Document parsers configured for this channel. """
+        """Document parsers configured for this channel."""
         result = []
         for config in self._config.parsers:
             if parser := DocumentParser.create(config):
@@ -252,7 +238,7 @@ class Channel:
         return result
 
     async def get_indexes(self) -> list[ChunkIndex]:
-        """ Get indexes configured for this channel. """
+        """Get indexes configured for this channel."""
         if self._indexes is None:
             tasks = [
                 Index.create_async(config, channel_key=self._channel_key, index_name=name)
@@ -264,23 +250,17 @@ class Channel:
 
     @cached_property
     def request_config(self) -> RequestConfig:
-        """ Default request configuration for this channel. """
+        """Default request configuration for this channel."""
         # looking for dynamic RequestConfig model that was used to validate the config
         request_config_model = next(
-            candidate for candidate in type(self._config).mro()
-            if (
-                issubclass(candidate, RequestConfig)
-                and not issubclass(candidate, ChannelConfig)
-            )
+            candidate
+            for candidate in type(self._config).mro()
+            if (issubclass(candidate, RequestConfig) and not issubclass(candidate, ChannelConfig))
         )
-        return request_config_model.model_validate(
-            self._config.model_dump(
-                exclude_none=True
-            )
-        )
+        return request_config_model.model_validate(self._config.model_dump(exclude_none=True))
 
     def dump_config(self) -> dict[str, Any]:
-        """ Create a dictionary representation of this channel's configuration. """
+        """Create a dictionary representation of this channel's configuration."""
         return dict(
             channel_key=self._channel_key,
             **self._config.model_dump(

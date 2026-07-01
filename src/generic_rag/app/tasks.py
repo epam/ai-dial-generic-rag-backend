@@ -22,7 +22,7 @@ class TaskName(enum.StrEnum):
 
 
 class DialApplicationMiddleware(TaskiqMiddleware):
-    """ Middleware that adds DIAL application id to a message labels. """
+    """Middleware that adds DIAL application id to a message labels."""
 
     def pre_send(self, message: TaskiqMessage):
         message.labels["dial-application-id"] = get_instance(DialApplicationId, None)
@@ -31,7 +31,7 @@ class DialApplicationMiddleware(TaskiqMiddleware):
 
 
 class DocumentStatusUpdateHelper:
-    """ Helper class to run document processing with automatic status update upon the processing. """
+    """Helper class to run document processing with automatic status update upon the processing."""
 
     def __init__(self, document_id: int, document_service: DocumentService):
         self._document_id = document_id
@@ -62,7 +62,7 @@ class DocumentStatusUpdateHelper:
 
 @asfunction
 class IndexDocumentTask(NamedTuple):
-    """ Indexing of a document. """
+    """Indexing of a document."""
 
     application_id: DialApplicationId
     document_service: DocumentService
@@ -78,14 +78,14 @@ class IndexDocumentTask(NamedTuple):
         """
         logger.info(f"indexing document with {document_id=} of '{self.application_id}'")
 
-        document = await self.document_service.get_document(
-            document_id
-        )
+        document = await self.document_service.get_document(document_id)
 
         status_helper = DocumentStatusUpdateHelper(document_id, self.document_service)
 
         if force or document.status not in [DocumentStatus.processed, DocumentStatus.ready]:
-            async with status_helper.begin(started=DocumentStatus.processing, finished=DocumentStatus.processed):
+            async with status_helper.begin(
+                started=DocumentStatus.processing, finished=DocumentStatus.processed
+            ):
                 await self.chunk_service.delete_chunks_by_document(document.id)
                 await self.chunk_service.add_chunks(
                     self.indexing_service.extract_chunks(document),

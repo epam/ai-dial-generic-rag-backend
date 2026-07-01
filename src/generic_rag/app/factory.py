@@ -33,14 +33,12 @@ def _fastapi_http_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "error": remove_nones(
-                {
-                    "message": http.HTTPStatus(exc.status_code).phrase,
-                    "type": "runtime_error",
-                    "code": exc.status_code,
-                    "display_message": exc.detail,
-                }
-            )
+            "error": remove_nones({
+                "message": http.HTTPStatus(exc.status_code).phrase,
+                "type": "runtime_error",
+                "code": exc.status_code,
+                "display_message": exc.detail,
+            })
         },
         headers=exc.headers,
     )

@@ -81,7 +81,9 @@ class DialFileStorage(FileStorage):
 
         return data.get("bucket"), data.get("appdata")
 
-    async def put_file(self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO) -> FileMetadata:
+    async def put_file(
+        self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO
+    ) -> FileMetadata:
         data = FormData()
         data.add_field(
             name="attachment",
@@ -122,9 +124,7 @@ class DialFileStorage(FileStorage):
                 logger.error(await response.text())
                 raise
 
-            return DialFileMetadata.model_validate(
-                await response.json()
-            )
+            return DialFileMetadata.model_validate(await response.json())
 
     async def download_file(self, url: str) -> AsyncIterable[bytes] | None:
         assert url.startswith("files/")
@@ -209,9 +209,11 @@ class DialFileStorage(FileStorage):
 
 
 class DialClient(ModelProvider):
-    """ Convenience class that encapsulates requests to DIAL. """
+    """Convenience class that encapsulates requests to DIAL."""
 
-    def __init__(self, session: ClientSession, dial_url: str, api_key: str, in_memory_cache: Cache | None = None):
+    def __init__(
+        self, session: ClientSession, dial_url: str, api_key: str, in_memory_cache: Cache | None = None
+    ):
         """
         :param session: instance of ClientSession used for making http requests
         :param dial_url: value of dial url
@@ -225,7 +227,7 @@ class DialClient(ModelProvider):
         self._in_memory_cache = in_memory_cache
 
     def bind(self, api_key: str) -> Self:
-        """ Return new instance of the client bound to given API key. """
+        """Return new instance of the client bound to given API key."""
         return DialClient(
             self._session,
             self._dial_url,
@@ -234,7 +236,7 @@ class DialClient(ModelProvider):
         )
 
     async def get_user_info(self) -> UserInfo:
-        """ Return user information. """
+        """Return user information."""
         request_url = urljoin(self._dial_url, "/v1/user/info")
         async with self._session.get(request_url, headers=self._headers) as response:
             try:
@@ -263,7 +265,7 @@ class DialClient(ModelProvider):
             return await response.json()
 
     def get_file_storage(self) -> FileStorage:
-        """ Return the file storage object. """
+        """Return the file storage object."""
         file_storage = DialFileStorage(
             self._session,
             self._dial_url,

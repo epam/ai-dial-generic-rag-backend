@@ -1,9 +1,8 @@
-
 from generic_rag.types import AnswerCallback, AnswerGenerator, Retriever
 
 
 class RetrievalOnlyAnswerGenerator(AnswerGenerator):
-    """ Returns all retrieval results as attachments without LLM invocation. """
+    """Returns all retrieval results as attachments without LLM invocation."""
 
     async def invoke(self, query: str, retriever: Retriever, callback: AnswerCallback):
         """

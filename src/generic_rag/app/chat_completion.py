@@ -31,7 +31,7 @@ class ChannelCompletion(ChatCompletion):
     _enable_debug_output: bool = True
 
     async def chat_completion(self, request: Request, response: Response) -> None:
-        """ Chat completion entrypoint. """
+        """Chat completion entrypoint."""
         async with ChannelBindings(SecretStr(request.api_key), request.dial_application_id).scope.adefine():
             with response.create_single_choice() as choice:
                 try:
@@ -48,12 +48,12 @@ class ChannelCompletion(ChatCompletion):
                 except Exception as e:
                     with choice.create_stage("[DEBUG] internal error") as stage:
                         await report_exception_to_stage(stage, e)
-                        raise InternalServerError(
-                            f"Unexpected error: {str(e)}"
-                        ) from e
+                        raise InternalServerError(f"Unexpected error: {str(e)}") from e
 
-    async def _channel_completion(self, choice: Choice, request: Request, response: Response, channel: Channel):
-        """ Chat completion logic for specific channel. """
+    async def _channel_completion(
+        self, choice: Choice, request: Request, response: Response, channel: Channel
+    ):
+        """Chat completion logic for specific channel."""
         with timed_stage(choice, "[DEBUG] request configuration") as stage:
             request_config_model = await RequestConfig.get_dynamic_model()
             raw_request = request.custom_fields.configuration if request.custom_fields else None
@@ -66,9 +66,7 @@ class ChannelCompletion(ChatCompletion):
                 stage.append_content(f"```\n{e.__class__.__name__}: {str(e)}\n```\n\n")
                 if isinstance(raw_request, dict):
                     stage.append_content(f"```json\n{json.dumps(raw_request, indent=2)}\n```\n\n")
-                raise InternalServerError(
-                    "Unable to process request configuration"
-                ) from e
+                raise InternalServerError("Unable to process request configuration") from e
             else:
                 stage.append_content(
                     f"```json\n{request_config.model_dump_json(indent=2, exclude_none=True)}\n```\n\n"
@@ -76,15 +74,11 @@ class ChannelCompletion(ChatCompletion):
 
         last_message = str(request.messages[-1].content)
 
-        retriever = Retriever.create(
-            request_config.retriever
-        ).use_listener(
+        retriever = Retriever.create(request_config.retriever).use_listener(
             ChatCompletionRetrievalStageListener(choice, self._enable_debug_output)
         )
 
-        answer_generator = AnswerGenerator.create(
-            request_config.generation
-        )
+        answer_generator = AnswerGenerator.create(request_config.generation)
 
         with get_openai_callback() as cb:
             await answer_generator.invoke(last_message, retriever, ChatCompletionAnswerCallback(choice))
@@ -95,11 +89,9 @@ class ChannelCompletion(ChatCompletion):
             response.set_usage(cb.prompt_tokens, cb.completion_tokens)
 
     async def configuration(self, request: ConfigurationRequest) -> ConfigurationResponse | dict:
-        """ Chat completion configuration entrypoint. """
+        """Chat completion configuration entrypoint."""
         async with ChannelBindings(SecretStr(request.api_key), request.dial_application_id).scope.adefine():
-            configuration_model = create_partial_model(
-                await RequestConfig.get_dynamic_model()
-            )
+            configuration_model = create_partial_model(await RequestConfig.get_dynamic_model())
             return configuration_model.model_json_schema()
 
 
@@ -126,7 +118,7 @@ class ChatCompletionAnswerCallback(AnswerCallback):
 
 
 class ChatCompletionRetrievalStageListener(RetrievalStageListener):
-    """ Listener that mirrors retrieval stages as stages of chat completion Choice. """
+    """Listener that mirrors retrieval stages as stages of chat completion Choice."""
 
     def __init__(self, choice: Choice, enable_debug_output: bool):
         self._choice = choice
@@ -137,7 +129,7 @@ class ChatCompletionRetrievalStageListener(RetrievalStageListener):
         return _current_stage.get()
 
     def begin(self, stage_name: str) -> AbstractAsyncContextManager["RetrievalStageListener"]:
-        """ Return context manager that wraps single stage of retrieval process. """
+        """Return context manager that wraps single stage of retrieval process."""
 
         @asynccontextmanager
         async def _context_manager():
@@ -153,11 +145,11 @@ class ChatCompletionRetrievalStageListener(RetrievalStageListener):
         return _context_manager()
 
     def log_message(self, message: str):
-        """ Called to report a message related to stage execution. """
+        """Called to report a message related to stage execution."""
         self._stage.append_content(f"{message}\n\n")
 
     async def on_retrieval_result(self, retrieved_docs: list[LangchainDocument]):
-        """ Called when receive retrieval results. """
+        """Called when receive retrieval results."""
         self._stage.append_content(f"Found {len(retrieved_docs)} reference(s)\n\n")
 
         if chunk_summary := self._get_chunk_summary(retrieved_docs):
@@ -174,7 +166,7 @@ class ChatCompletionRetrievalStageListener(RetrievalStageListener):
                 self._stage.add_attachment(attachment)
 
     async def on_error(self, e: Exception):
-        """ Called in case of errors. """
+        """Called in case of errors."""
         await report_exception_to_stage(self._stage, e)
 
     @staticmethod
@@ -203,9 +195,8 @@ async def report_exception_to_stage(stage: Stage, exception: Exception, enable_s
     trace_id = "unknown"
     span_id = "unknown"
 
-    if (
-        ((span := get_current_span()) != INVALID_SPAN) and
-        ((ctx := span.get_span_context()) != INVALID_SPAN_CONTEXT)
+    if ((span := get_current_span()) != INVALID_SPAN) and (
+        (ctx := span.get_span_context()) != INVALID_SPAN_CONTEXT
     ):
         trace_id = f"{ctx.trace_id:032x}"
         span_id = f"{ctx.span_id:016x}"

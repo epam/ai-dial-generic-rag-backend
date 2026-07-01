@@ -12,13 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class UnstructuredParserConfig(BaseModel):
-    chunk_size: int = Field(
-        default=1000,
-        description="the chunk size for unstructured document loader"
-    )
+    chunk_size: int = Field(default=1000, description="the chunk size for unstructured document loader")
     combine_text_under_n_chars: int = Field(
-        default=100,
-        description="combine small chunks until reaching this many characters"
+        default=100, description="combine small chunks until reaching this many characters"
     )
 
     @model_validator(mode="after")
@@ -32,7 +28,7 @@ class UnstructuredParserConfig(BaseModel):
 
 
 class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
-    """ Parser that extracts text chunks using `unstructured` library. """
+    """Parser that extracts text chunks using `unstructured` library."""
 
     async def extract_chunks(self, document: Document) -> AsyncIterable[TextChunk]:
         return self._extract_chunks_gen(document)

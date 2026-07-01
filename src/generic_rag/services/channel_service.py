@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @singleton
 class ChannelService:
-    """ Channel configuration management service. """
+    """Channel configuration management service."""
 
     _configuration_schema_model: type[ChannelConfig] = None
 
@@ -43,7 +43,7 @@ class ChannelService:
         return Channel(channel_key, channel_config)
 
     async def get_channel_config_model(self) -> type[ChannelConfig]:
-        """ Return dynamic model of channel configuration schema. """
+        """Return dynamic model of channel configuration schema."""
         if not self._configuration_schema_model:
             self._configuration_schema_model = await ChannelConfig.get_dynamic_model()
         return self._configuration_schema_model

@@ -65,10 +65,13 @@ torchvision = [
 ]
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.15.5"
+ruff = "^0.15.20"
 click = "^8.3.1"
 pytest = "^9.0.3"
 pytest-asyncio = "^1.0.0"
+
+[tool.ruff.format]
+preview = true
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -77,7 +80,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 target-version = "py313"
-line-length = 120
+line-length = 110
 
 [tool.ruff.lint]
 select = [

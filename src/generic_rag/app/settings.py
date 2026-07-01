@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseConfig(BaseModel):
-    """ Configuration for database connection. """
+    """Configuration for database connection."""
 
     host: str = Field(default="localhost", description="Postgresql database host")
     port: int = Field(default=5432, description="Postgresql database port")
@@ -37,7 +37,8 @@ class DatabaseConfig(BaseModel):
 
 
 class ElasticsearchSettings(BaseModel):
-    """ Configuration for Elasticsearch connection. """
+    """Configuration for Elasticsearch connection."""
+
     url: HttpUrl = "http://localhost:9200"
     username: str = "elastic"
     password: SecretStr = "elastic"
@@ -74,7 +75,7 @@ class ElasticsearchSettings(BaseModel):
 
 
 class InMemoryCacheSettings(BaseModel):
-    """ Configuration for in-memory files caching. """
+    """Configuration for in-memory files caching."""
 
     enabled: bool = True
     capacity: ByteSize = Field(
@@ -91,7 +92,8 @@ class InMemoryCacheSettings(BaseModel):
 
 
 class ApplicationSettings(BaseModel):
-    """ Main application settings class. """
+    """Main application settings class."""
+
     dial_url: HttpUrl = Field(..., description="Url to the dial core.")
     dial_public_url: HttpUrl | None = Field(None, description="Url where dial core is publicly accessible.")
     in_memory_cache: InMemoryCacheSettings = InMemoryCacheSettings()
@@ -120,7 +122,9 @@ def get_app_settings() -> ApplicationSettings:
             "username": os.getenv("ELASTICSEARCH_USERNAME", "elastic"),
             "password": os.getenv("ELASTICSEARCH_PASSWORD", "elastic"),
             "index_prefix": os.getenv("ELASTICSEARCH_INDEX_PREFIX"),
-        } if os.getenv("ELASTICSEARCH_URL") else None,
+        }
+        if os.getenv("ELASTICSEARCH_URL")
+        else None,
     }
     try:
         return ApplicationSettings.model_validate(raw_config)

@@ -86,9 +86,9 @@ async def pgvector_storage_backend_factory() -> PgvectorIndexStorageBackend:
 
 
 @singleton
-async def elasticsearch_storage_backend_factory(settings: ApplicationSettings, exit_stack: AsyncExitStack) -> (
-    ElasticsearchIndexStorageBackend | None
-):
+async def elasticsearch_storage_backend_factory(
+    settings: ApplicationSettings, exit_stack: AsyncExitStack
+) -> ElasticsearchIndexStorageBackend | None:
     if not settings.elasticsearch:
         return None
 
@@ -96,10 +96,7 @@ async def elasticsearch_storage_backend_factory(settings: ApplicationSettings, e
     es_client = await exit_stack.enter_async_context(
         AsyncElasticsearch(
             hosts=f"{url.scheme}://{url.host}:{url.port}/",
-            basic_auth=(
-                settings.elasticsearch.username,
-                settings.elasticsearch.password.get_secret_value()
-            ),
+            basic_auth=(settings.elasticsearch.username, settings.elasticsearch.password.get_secret_value()),
         )
     )
 
@@ -139,6 +136,4 @@ async def channel_factory(application_id: DialApplicationId, channel_service: Ch
             status_code=HTTP_403_FORBIDDEN,
             detail="Forbidden",
         )
-    return await channel_service.get_channel(
-        application_id
-    )
+    return await channel_service.get_channel(application_id)

@@ -44,29 +44,23 @@ def is_string_array_field(field_info: FieldInfo) -> bool:
 
 @scoped(ScopeName.channel)
 class MetadataService:
-    """ Service to work with document metadata schema. """
+    """Service to work with document metadata schema."""
 
     def __init__(self, channel: Channel):
         self._channel_key = channel.channel_key
-        self._model: type[BaseModel] = json_schema_to_pydantic.create_model(
-            channel.metadata_schema
-        )
+        self._model: type[BaseModel] = json_schema_to_pydantic.create_model(channel.metadata_schema)
 
     def _iter_properties(self, marker: str) -> Generator[tuple[str, FieldInfo]]:
-        """ Iterate over properties that have given marker set. """
+        """Iterate over properties that have given marker set."""
         for key, field_info in self._model.model_fields.items():
             field_info = typing.cast(FieldInfo, field_info)
             json_schema_extra = field_info.json_schema_extra
-            if json_schema_extra and json_schema_extra.get(
-                marker
-            ):
+            if json_schema_extra and json_schema_extra.get(marker):
                 yield key, field_info
 
     def get_filterable_fields(self) -> list[tuple[str, FieldInfo]]:
-        """ Return list of fields that can be used to filter documents. """
-        return list(
-            self._iter_properties(ENABLE_FILTERING_MARKER)
-        )
+        """Return list of fields that can be used to filter documents."""
+        return list(self._iter_properties(ENABLE_FILTERING_MARKER))
 
     def get_mcp_retrieve_chunks_field_names(self) -> set[str] | None:
         """
@@ -78,18 +72,16 @@ class MetadataService:
         return names or None
 
     def get_sortable_fields(self) -> list[tuple[str, FieldInfo]]:
-        """ Return list of fields that can be used to sort documents. """
+        """Return list of fields that can be used to sort documents."""
         return [
-            (key, field_info) for key, field_info in self.get_filterable_fields()
-            if (
-                is_string_field(field_info) or
-                is_date_field(field_info)
-            )
+            (key, field_info)
+            for key, field_info in self.get_filterable_fields()
+            if (is_string_field(field_info) or is_date_field(field_info))
         ]
 
     @transaction
     async def get_filtering_dimensions(self) -> dict[str, list[str]]:
-        """ Get "dimensions" (lists of possible values) for metadata fields """
+        """Get "dimensions" (lists of possible values) for metadata fields"""
         result: dict[str, list[str]] = {}
         string_dimensions = []
 
@@ -102,9 +94,7 @@ class MetadataService:
                 result[key] = array_values
 
         if string_dimensions:
-            result.update(
-                await self._get_string_fields_dimensions(string_dimensions)
-            )
+            result.update(await self._get_string_fields_dimensions(string_dimensions))
 
         return result
 
@@ -115,20 +105,18 @@ class MetadataService:
             select(
                 column("js.key", is_literal=True).label("key"),
                 column("js.value", is_literal=True).label("value"),
-            ).distinct().select_from(
-                DocumentEntity,
-                func.jsonb_each(
-                    DocumentEntity.metadata_
-                ).alias(
-                    "js",
-                )
-            ).where(
-                DocumentEntity.channel_key == self._channel_key,
-                column("js.key", is_literal=True).in_(names)
-            ).order_by(
-                "key",
-                "value"
             )
+            .distinct()
+            .select_from(
+                DocumentEntity,
+                func.jsonb_each(DocumentEntity.metadata_).alias(
+                    "js",
+                ),
+            )
+            .where(
+                DocumentEntity.channel_key == self._channel_key, column("js.key", is_literal=True).in_(names)
+            )
+            .order_by("key", "value")
         )
 
         for name, value in cursor.all():
@@ -140,14 +128,13 @@ class MetadataService:
         cursor = await get_current_session().scalars(
             select(
                 column("value", is_literal=True),
-            ).distinct().select_from(
+            )
+            .distinct()
+            .select_from(
                 DocumentEntity,
-                func.jsonb_array_elements_text(
-                    DocumentEntity.metadata_[field_name]
-                ).alias(
-                    "value"
-                )
-            ).where(
+                func.jsonb_array_elements_text(DocumentEntity.metadata_[field_name]).alias("value"),
+            )
+            .where(
                 DocumentEntity.channel_key == self._channel_key,
             )
         )

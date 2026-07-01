@@ -9,7 +9,7 @@ from aidial_sdk.chat_completion import Choice
 
 
 def log_execution_time(logger: logging.Logger):
-    """ Decorator to measure and log execution time of async function """
+    """Decorator to measure and log execution time of async function"""
 
     @asynccontextmanager
     async def _measure_execution_time(target):
@@ -31,6 +31,7 @@ def log_execution_time(logger: logging.Logger):
 
     def decorator(target):
         if inspect.isasyncgenfunction(target):
+
             @functools.wraps(target)
             async def wrapper(*args, **kwargs):
                 async with _measure_execution_time(target):
@@ -40,6 +41,7 @@ def log_execution_time(logger: logging.Logger):
             return wrapper
 
         if inspect.iscoroutinefunction(target):
+
             @functools.wraps(target)
             async def wrapper(*args, **kwargs):
                 async with _measure_execution_time(target):
@@ -54,7 +56,7 @@ def log_execution_time(logger: logging.Logger):
 
 @contextmanager
 def timed_stage(choice: Choice, name: str):
-    """ Create stage that measures time of execution """
+    """Create stage that measures time of execution"""
 
     async def _periodic_ping(stage_io):
         while True:

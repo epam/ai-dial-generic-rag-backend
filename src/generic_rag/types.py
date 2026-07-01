@@ -60,7 +60,8 @@ class ChunkRef[T: ChunkType](BaseModel):
 
 
 class ChunkMetadata(BaseModel):
-    """ Additional information related to a chunk. """
+    """Additional information related to a chunk."""
+
     page_number: int | None = Field(None, description="number of page where this chunk was extracted")
 
     model_config = ConfigDict(
@@ -69,21 +70,24 @@ class ChunkMetadata(BaseModel):
 
 
 class TextChunk(ChunkMetadata, ChunkRef):
-    """ A piece of text information. """
+    """A piece of text information."""
+
     chunk_type: Literal[ChunkType.text] = ChunkType.text
     text: str
 
 
 @enum.unique
 class ImageType(StrEnum):
-    """ Type of image stored by image chunk. """
+    """Type of image stored by image chunk."""
+
     page = enum.auto()
     table = enum.auto()
     diagram = enum.auto()
 
 
 class ImageChunk(ChunkMetadata, ChunkRef):
-    """ A piece of graphical information. """
+    """A piece of graphical information."""
+
     chunk_type: Literal[ChunkType.image] = ChunkType.image
     image_type: ImageType = Field(..., description="type of this chunk's image")
     mime_type: str = Field(..., description="mime type of this chunk's content")
@@ -120,6 +124,7 @@ class Document(BaseModel, ABC):
     """
     A document stored in the system
     """
+
     id: int = Field(..., description="unique id of this document within the channel")
     url: str = Field(..., description="url of the original document")
     display_name: str = Field(..., description="user-facing name of the document")
@@ -127,38 +132,33 @@ class Document(BaseModel, ABC):
     size: int = Field(..., description="size of the original document (in bytes)")
     metadata: dict = Field(
         default_factory=dict,
-        description="optional metadata associated with this document (should match the schema associated with the channel"
+        description="optional metadata associated with this document (should match the schema associated with the channel",
     )
     status: DocumentStatus = Field(..., description="the status of this document processing")
 
     async def get_content(self) -> bytes | None:
-        """ Returns the document's content. """
+        """Returns the document's content."""
         if (stream := await self.get_content_stream()) is not None:
-            return b"".join(
-                [chunk async for chunk in stream]
-            )
+            return b"".join([chunk async for chunk in stream])
         return None
 
     @abstractmethod
     async def get_content_stream(self) -> AsyncIterable[bytes] | None:
-        """ Returns async iterable on chunks of the document's content. """
+        """Returns async iterable on chunks of the document's content."""
 
 
 class Component(ABC):  # noqa: B024
-    """ Component is a main building block for RAG pipeline. """
+    """Component is a main building block for RAG pipeline."""
+
     __qualifier: ClassVar[str | None] = None
 
     @classmethod
     def get_qualifier(cls) -> str:
-        """ Return a qualifier - a special key that can be used to identify this component. """
+        """Return a qualifier - a special key that can be used to identify this component."""
         if not cls.__qualifier:
             name = cls.__name__
             for candidate in cls.mro():
-                if (
-                    candidate is cls
-                    or candidate is Component
-                    or not issubclass(candidate, Component)
-                ):
+                if candidate is cls or candidate is Component or not issubclass(candidate, Component):
                     continue
                 name = name.removesuffix(candidate.__name__)
             cls.__qualifier = humps.depascalize(name)
@@ -166,7 +166,7 @@ class Component(ABC):  # noqa: B024
 
     @classmethod
     def get_implementations[T](cls: type[T]) -> Generator[type[T]]:
-        """ Recursively iterate over implementations of this component. """
+        """Recursively iterate over implementations of this component."""
         for child in cls.__subclasses__():
             assert issubclass(child, Component)
             if issubclass(child, ABC):
@@ -180,11 +180,11 @@ class Component(ABC):  # noqa: B024
 
 @runtime_checkable
 class DynamicModel(Protocol):
-    """ Protocol used by :class:`ConfigurableComponent` to recognize dynamic configuration model. """
+    """Protocol used by :class:`ConfigurableComponent` to recognize dynamic configuration model."""
 
     @classmethod
     async def get_dynamic_model[T: BaseModel](cls: type[T]) -> type[T]:
-        """ Create dynamic (runtime) model for given class. """
+        """Create dynamic (runtime) model for given class."""
 
 
 class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
@@ -240,12 +240,12 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
 
     @property
     def config(self) -> ConfigT:
-        """ Configuration of this component. """
+        """Configuration of this component."""
         return self.__config
 
     @classmethod
     def create[T: ConfigurableComponent](cls: type[T], config: ConfigT, **kwargs) -> T:
-        """ Create instance of this component for given configuration. """
+        """Create instance of this component for given configuration."""
         for implementation in cls.get_implementations():
             if isinstance(config, implementation.get_config_model()):
                 return implementation(config, **kwargs)
@@ -254,7 +254,7 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
     @classmethod
     @cache
     def get_config_model(cls) -> type[ConfigT]:
-        """ Return configuration model type defined for this component. """
+        """Return configuration model type defined for this component."""
         if result := resolve_generic_arg(cls, ConfigurableComponent, 0):
             if isinstance(result, TypeVar) and issubclass(result.__default__, BaseModel):
                 result = result.__default__
@@ -285,12 +285,12 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
 
         async def _create_model_variant(impl: type[ConfigurableComponent[ConfigT]]) -> type[ConfigT]:
             # noinspection PyTypeHints
-            fields = {discriminator: (
-                Literal[impl.get_qualifier()],
-                Field(
-                    impl.get_qualifier() if impl is default_impl else PydanticUndefined
+            fields = {
+                discriminator: (
+                    Literal[impl.get_qualifier()],
+                    Field(impl.get_qualifier() if impl is default_impl else PydanticUndefined),
                 )
-            )}
+            }
             config_model = impl.get_config_model()
 
             assert issubclass(config_model, BaseModel)
@@ -309,15 +309,11 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
                 __doc__=impl.__doc__ or config_model.__doc__,
                 __config__=ConfigDict(
                     frozen=True,
-                )
+                ),
             )
 
         def set_default_discriminator(value: Any) -> Any:
-            if (
-                default_impl is not None
-                and isinstance(value, dict)
-                and discriminator not in value
-            ):
+            if default_impl is not None and isinstance(value, dict) and discriminator not in value:
                 value[discriminator] = default_impl.get_qualifier()
             return value
 
@@ -334,11 +330,11 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
 
 
 class DocumentParser[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
-    """ Component used to extract chunks from document. """
+    """Component used to extract chunks from document."""
 
     @abstractmethod
     async def extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]:
-        """ Extract chunks from given document """
+        """Extract chunks from given document"""
 
 
 type TextType = str
@@ -349,7 +345,8 @@ type VectorType = list[float]
 
 
 class IndexedEntityMeta(BaseModel):
-    """ Metadata of indexed entity. """
+    """Metadata of indexed entity."""
+
     document_id: int = Field(..., description="id of the document")
 
     model_config = ConfigDict(
@@ -361,26 +358,31 @@ class IndexRecord[IndexT: TextType | VectorType](BaseModel):
     """
     Single record stored in an index along with associated metadata.
     """
+
     index: Annotated[IndexT, Field(description="the record's content")]
-    metadata: Annotated[IndexedEntityMeta, Field(description="the metadata of the indexed entity the record belongs to")]
+    metadata: Annotated[
+        IndexedEntityMeta, Field(description="the metadata of the indexed entity the record belongs to")
+    ]
 
 
-class Indexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
-    """ Component that performs actual indexing of data and user queries. """
+class Indexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
+    ConfigurableComponent[ConfigT], ABC
+):
+    """Component that performs actual indexing of data and user queries."""
 
     @abstractmethod
     async def index_query(self, query: str) -> IndexT:
-        """ Index given query in a way that allows to perform lookup for matching records. """
+        """Index given query in a way that allows to perform lookup for matching records."""
 
     @abstractmethod
-    async def index_data(self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]) -> Collection[
-        IndexRecord[IndexT]
-    ]:
-        """ Index given data for further storage. """
+    async def index_data(
+        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+    ) -> Collection[IndexRecord[IndexT]]:
+        """Index given data for further storage."""
 
 
 class IndexStorage[IndexT: TextType | VectorType](ABC):
-    """ Storage for single index. """
+    """Storage for single index."""
 
     @abstractmethod
     async def relevance_search(
@@ -408,15 +410,14 @@ class IndexStorage[IndexT: TextType | VectorType](ABC):
 
     @abstractmethod
     async def remove(self, *documents: int):
-        """ Remove index records for documents with given IDs. """
+        """Remove index records for documents with given IDs."""
 
     @abstractmethod
     def export(self, *documents: int) -> AsyncIterable[IndexRecord[IndexT]]:
-        """ Export index records for documents with given IDs. """
+        """Export index records for documents with given IDs."""
 
 
 class IndexStorageBackend[StorageOptionsT: BaseModel = BaseModel](Component, ABC):
-
     @abstractmethod
     async def get_storage[IndexT: TextType | VectorType](
         self,
@@ -437,7 +438,7 @@ class IndexStorageBackend[StorageOptionsT: BaseModel = BaseModel](Component, ABC
     @property
     @abstractmethod
     def storage_options_model(self) -> type[StorageOptionsT]:
-        """" The model of storage options for this backend. """
+        """ " The model of storage options for this backend."""
 
 
 class IndexerCompatibilityError(RuntimeError):
@@ -452,10 +453,10 @@ class IndexerCompatibilityError(RuntimeError):
 
 
 class RetrievalStageListener:
-    """ Class for implementing hooks for different stages of retrieval process. """
+    """Class for implementing hooks for different stages of retrieval process."""
 
     def begin(self, stage_name: str) -> AbstractAsyncContextManager["RetrievalStageListener"]:
-        """ Return context manager that wraps single stage of retrieval process. """
+        """Return context manager that wraps single stage of retrieval process."""
 
         @asynccontextmanager
         async def _context_manager():
@@ -464,17 +465,17 @@ class RetrievalStageListener:
         return _context_manager()
 
     def log_message(self, message: str):
-        """ Called to report a message related to stage execution. """
+        """Called to report a message related to stage execution."""
 
     async def on_retrieval_result(self, retrieved_docs: list[LangchainDocument]):
-        """ Called when receive retrieval results. """
+        """Called when receive retrieval results."""
 
     async def on_error(self, e: Exception):
-        """ Called in case of errors. """
+        """Called in case of errors."""
 
 
 class Retriever[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
-    """ Top-level component responsible for retrieval of relevant chunks for further use. """
+    """Top-level component responsible for retrieval of relevant chunks for further use."""
 
     @abstractmethod
     async def invoke(self, query: str) -> list[LangchainDocument]:
@@ -486,21 +487,19 @@ class Retriever[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], 
 
     @abstractmethod
     def use_listener(self, listener: RetrievalStageListener) -> Self:
-        """ Use given retrieval event listener. """
+        """Use given retrieval event listener."""
 
 
 class AnswerCallback:
-    """ Callback object that allows to catch answer as it is generated """
+    """Callback object that allows to catch answer as it is generated"""
 
-    def append_content(self, content: str):
-        ...
+    def append_content(self, content: str): ...
 
-    def append_reference(self, reference_index: int, retrieved_doc: LangchainDocument):
-        ...
+    def append_reference(self, reference_index: int, retrieved_doc: LangchainDocument): ...
 
 
 class AnswerGenerator[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
-    """ Component that generates answer to a user query. """
+    """Component that generates answer to a user query."""
 
     @abstractmethod
     async def invoke(self, query: str, retriever: Retriever, callback: AnswerCallback):
@@ -514,13 +513,14 @@ class AnswerGenerator[ConfigT: BaseModel = BaseModel](ConfigurableComponent[Conf
 
 
 class LlmConfig(BaseModel):
-    """ Configuration for the LLM. """
+    """Configuration for the LLM."""
+
     deployment_name: str = Field(
         default=DEFAULT_LLM_DEPLOYMENT,
         description="Name of LLM deployment to use.",
     )
     temperature: float = Field(
-        default=0., ge=0., le=2., description="Controls the randomness and creativity of a LLM's output."
+        default=0.0, ge=0.0, le=2.0, description="Controls the randomness and creativity of a LLM's output."
     )
     max_retries: int = Field(
         default=3,
@@ -529,7 +529,6 @@ class LlmConfig(BaseModel):
 
 
 class ModelProvider(ABC):
-
     @abstractmethod
     def get_embeddings_model(self, deployment: str, max_retries=3) -> AzureOpenAIEmbeddings:
         """
@@ -559,27 +558,28 @@ class FileMetadata(BaseModel):
 
 
 class FileStorage(ABC):
-
     @abstractmethod
     async def get_bucket(self) -> str:
-        """ Name of a bucket for storing files. """
+        """Name of a bucket for storing files."""
 
     @abstractmethod
-    async def put_file(self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO) -> FileMetadata:
-        """ Put given content into a bucket and return the metadata of created file. """
+    async def put_file(
+        self, bucket: str, filepath: str, content_type: str, content: bytes | BinaryIO
+    ) -> FileMetadata:
+        """Put given content into a bucket and return the metadata of created file."""
 
     @abstractmethod
     async def get_file_metadata(self, url: str) -> FileMetadata | None:
-        """ Download metadata of file with given url, or return None if the file doesn't exist. """
+        """Download metadata of file with given url, or return None if the file doesn't exist."""
 
     @abstractmethod
     async def download_file(self, url: str) -> AsyncIterable[bytes] | None:
-        """ Download content of file with given url, or return None if the file doesn't exist. """
+        """Download content of file with given url, or return None if the file doesn't exist."""
 
     @abstractmethod
     async def copy_file_to_user(self, source_url: str, destination_name: str) -> str:
-        """ Copy file with given url to a user bucket, and return the url of copied file.  """
+        """Copy file with given url to a user bucket, and return the url of copied file."""
 
     @abstractmethod
     async def delete_file(self, url: str):
-        """ Delete file with given url. """
+        """Delete file with given url."""

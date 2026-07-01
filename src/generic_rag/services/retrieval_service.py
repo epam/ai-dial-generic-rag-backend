@@ -11,7 +11,8 @@ from generic_rag.types import AnyChunk, ImageChunk, Retriever, TextChunk
 
 
 class RetrievalRequest(BaseModel):
-    """ Data retrieval request options. """
+    """Data retrieval request options."""
+
     query: Annotated[str, Field(description="The search query")]
     retriever: Annotated[dict[str, Any], Field(default_factory=dict)]
 
@@ -26,7 +27,7 @@ class RetrievalRequest(BaseModel):
             __doc__=cls.__doc__,
             retriever=Annotated[
                 retriever_config_model | None,
-                Field(default=None, description="Retriever configuration overrides")
+                Field(default=None, description="Retriever configuration overrides"),
             ],
         )
 
@@ -46,15 +47,13 @@ class ImageChunkResult(ChunkSource, ImageChunk):
 
 type SingleChunkResult = Annotated[
     TextChunkResult | ImageChunkResult,
-    Field(
-        discriminator="chunk_type",
-        description="Retrieval result that consist of single chunk."
-    )
+    Field(discriminator="chunk_type", description="Retrieval result that consist of single chunk."),
 ]
 
 
 class CombinedResult(ChunkSource):
-    """ Retrieval result that is combined of multiple chunks. """
+    """Retrieval result that is combined of multiple chunks."""
+
     result_type: Literal["combined"] = "combined"
     chunks: Sequence[AnyChunk]
 
@@ -78,13 +77,10 @@ class RetrievalService:
         return retrieval_request_model.model_json_schema()
 
     async def data_retrieval(self, request: RetrievalRequest) -> Sequence[RetrievalResult]:
-        """ Run retriever and return chunks which are relevant to a given query. """
+        """Run retriever and return chunks which are relevant to a given query."""
         request_config_model = await RequestConfig.get_dynamic_model()
         request_config = request_config_model.create(
-            defaults=self._channel.request_config,
-            overrides={
-                "retriever": request.retriever
-            }
+            defaults=self._channel.request_config, overrides={"retriever": request.retriever}
         )
 
         retriever = Retriever.create(request_config.retriever)
@@ -106,9 +102,8 @@ class RetrievalService:
             return CombinedResult.model_validate(
                 dict(
                     chunks=[
-                        chunk.model_dump(
-                            exclude=set(chunk.model_extra.keys())
-                        ) if chunk.model_extra else None for chunk in chunks
+                        chunk.model_dump(exclude=set(chunk.model_extra.keys())) if chunk.model_extra else None
+                        for chunk in chunks
                     ],
                     **chunk_source.model_dump(),
                 )

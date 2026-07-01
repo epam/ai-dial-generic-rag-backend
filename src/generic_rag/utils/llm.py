@@ -36,8 +36,10 @@ class LCMessageLogger(AsyncCallbackHandler):
         self._log_raw_llm_response = log_raw_llm_response
         self._log_token_usage = log_token_usage
 
-    def on_chat_model_start(self, serialized: dict[str, Any], messages: list[list[BaseMessage]], **kwargs: Any) -> Any:
-        """ Run when Chat Model starts running. """
+    def on_chat_model_start(
+        self, serialized: dict[str, Any], messages: list[list[BaseMessage]], **kwargs: Any
+    ) -> Any:
+        """Run when Chat Model starts running."""
         if len(messages) != 1:
             raise ValueError(f'expected "messages" to have len 1, got: {len(messages)}')
 
@@ -57,7 +59,7 @@ class LCMessageLogger(AsyncCallbackHandler):
         logger.info(f"call to {model} with {len(msgs_list)} messages:\n{msgs_str}")
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> Any:
-        """ Run when LLM ends running. """
+        """Run when LLM ends running."""
         generations = response.generations
         if len(generations) != 1:
             raise ValueError(f'expected "generations" to have len 1, got: {len(generations)}')

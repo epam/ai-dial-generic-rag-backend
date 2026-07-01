@@ -14,9 +14,7 @@ sys.path.append(str(src_path))
 load_dotenv()
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", logging.INFO)
-LOG_USE_COLORS = pydantic.TypeAdapter(bool).validate_python(
-    os.getenv("LOG_USE_COLORS", "no")
-)
+LOG_USE_COLORS = pydantic.TypeAdapter(bool).validate_python(os.getenv("LOG_USE_COLORS", "no"))
 
 from generic_rag.utils.logging import configure_logging  # noqa: E402
 

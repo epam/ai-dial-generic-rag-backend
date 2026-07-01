@@ -39,9 +39,8 @@ class EmbeddingsEndpoint(Embeddings):
             Embedding(
                 embedding=embedding,
                 index=i,
-            ) for i, embedding in enumerate(
-                await model.aembed_documents(request.input)
             )
+            for i, embedding in enumerate(await model.aembed_documents(request.input))
         ]
         return Response(
             data=data,
@@ -49,5 +48,5 @@ class EmbeddingsEndpoint(Embeddings):
             usage=Usage(
                 prompt_tokens=0,
                 total_tokens=0,
-            )
+            ),
         )

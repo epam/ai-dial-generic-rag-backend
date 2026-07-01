@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @scoped(ScopeName.channel)
 class ChunkService:
-    """ Service for managing storage of document's chunks. """
+    """Service for managing storage of document's chunks."""
 
     def __init__(self, channel: Channel, file_storage: FileStorage):
         self._channel_key = channel.channel_key
@@ -49,15 +49,13 @@ class ChunkService:
             await self._save_entities(batch)
 
     @overload
-    async def _create_entity(self, chunk: TextChunk) -> TextChunkEntity:
-        ...
+    async def _create_entity(self, chunk: TextChunk) -> TextChunkEntity: ...
 
     @overload
-    async def _create_entity(self, chunk: ImageChunk) -> ImageChunkEntity:
-        ...
+    async def _create_entity(self, chunk: ImageChunk) -> ImageChunkEntity: ...
 
     async def _create_entity(self, chunk: TextChunk | ImageChunk) -> TextChunkEntity | ImageChunkEntity:
-        """ Create database entity for given chunk. """
+        """Create database entity for given chunk."""
         if isinstance(chunk, TextChunk):
             return TextChunkEntity(
                 channel_key=self._channel_key,
@@ -109,13 +107,12 @@ class ChunkService:
         await get_current_session().flush()
 
     def get_chunks_by_document(self, document_id: int) -> AsyncIterable[AnyChunk]:
-        """ Load chunks of given document. """
+        """Load chunks of given document."""
 
         @transaction
         async def _chunks_fetcher():
             text_entities: ScalarResult[TextChunkEntity] = await get_current_session().scalars(
-                select(TextChunkEntity)
-                .where(
+                select(TextChunkEntity).where(
                     TextChunkEntity.channel_key == self._channel_key,
                     TextChunkEntity.document_id == document_id,
                 )
@@ -133,7 +130,7 @@ class ChunkService:
 
     @transaction
     async def delete_chunks_by_document(self, document_id: int):
-        """ Delete chunks of given document. """
+        """Delete chunks of given document."""
 
         async def _delete_file(url: str):
             async with _semaphore:
@@ -166,7 +163,7 @@ class ChunkService:
 
     @transaction
     async def get_chunks_by_references(self, chunk_refs: Iterable[ChunkRef]) -> Collection[AnyChunk]:
-        """ Load chunks with given references. """
+        """Load chunks with given references."""
         text_chunk_ids: list[tuple[int, int]] = []
         image_chunk_ids: list[tuple[int, int]] = []
         tasks = []
@@ -182,9 +179,7 @@ class ChunkService:
             text_entities: ScalarResult[TextChunkEntity] = await get_current_session().scalars(
                 select(TextChunkEntity).where(
                     TextChunkEntity.channel_key == self._channel_key,
-                    tuple_(TextChunkEntity.document_id, TextChunkEntity.chunk_id).in_(
-                        text_chunk_ids
-                    )
+                    tuple_(TextChunkEntity.document_id, TextChunkEntity.chunk_id).in_(text_chunk_ids),
                 )
             )
             tasks.extend(self._convert_entity(entity) for entity in text_entities.all())
@@ -193,9 +188,7 @@ class ChunkService:
             image_entities: ScalarResult[ImageChunkEntity] = await get_current_session().scalars(
                 select(ImageChunkEntity).where(
                     ImageChunkEntity.channel_key == self._channel_key,
-                    tuple_(ImageChunkEntity.document_id, ImageChunkEntity.chunk_id).in_(
-                        image_chunk_ids
-                    )
+                    tuple_(ImageChunkEntity.document_id, ImageChunkEntity.chunk_id).in_(image_chunk_ids),
                 )
             )
             tasks.extend(self._convert_entity(entity) for entity in image_entities.all())
@@ -205,20 +198,17 @@ class ChunkService:
     @overload
     async def get_chunks_by_pages(
         self, *doc_pages: tuple[int, int], chunk_type: Literal[ChunkType.text]
-    ) -> Collection[TextChunk]:
-        ...
+    ) -> Collection[TextChunk]: ...
 
     @overload
     async def get_chunks_by_pages(
         self, *doc_pages: tuple[int, int], chunk_type: Literal[ChunkType.image]
-    ) -> Collection[ImageChunk]:
-        ...
+    ) -> Collection[ImageChunk]: ...
 
     @overload
     async def get_chunks_by_pages(
         self, *doc_pages: tuple[int, int], chunk_type: None = None
-    ) -> Collection[AnyChunk]:
-        ...
+    ) -> Collection[AnyChunk]: ...
 
     @transaction
     async def get_chunks_by_pages(
@@ -239,9 +229,7 @@ class ChunkService:
             text_entities: ScalarResult[TextChunkEntity] = await get_current_session().scalars(
                 select(TextChunkEntity).where(
                     TextChunkEntity.channel_key == self._channel_key,
-                    tuple_(TextChunkEntity.document_id, TextChunkEntity.page_number).in_(
-                        doc_pages
-                    )
+                    tuple_(TextChunkEntity.document_id, TextChunkEntity.page_number).in_(doc_pages),
                 )
             )
             tasks.extend(self._convert_entity(entity) for entity in text_entities.all())
@@ -250,9 +238,7 @@ class ChunkService:
             image_entities: ScalarResult[ImageChunkEntity] = await get_current_session().scalars(
                 select(ImageChunkEntity).where(
                     ImageChunkEntity.channel_key == self._channel_key,
-                    tuple_(ImageChunkEntity.document_id, ImageChunkEntity.page_number).in_(
-                        doc_pages
-                    )
+                    tuple_(ImageChunkEntity.document_id, ImageChunkEntity.page_number).in_(doc_pages),
                 )
             )
             tasks.extend(self._convert_entity(entity) for entity in image_entities.all())
@@ -260,15 +246,13 @@ class ChunkService:
         return await asyncio.gather(*tasks)
 
     @overload
-    async def _convert_entity(self, entity: TextChunkEntity) -> TextChunk:
-        ...
+    async def _convert_entity(self, entity: TextChunkEntity) -> TextChunk: ...
 
     @overload
-    async def _convert_entity(self, entity: ImageChunkEntity) -> ImageChunk:
-        ...
+    async def _convert_entity(self, entity: ImageChunkEntity) -> ImageChunk: ...
 
     async def _convert_entity(self, entity: TextChunkEntity | ImageChunkEntity) -> TextChunk | ImageChunk:
-        """ Convert given entity into a chunk. """
+        """Convert given entity into a chunk."""
         if isinstance(entity, TextChunkEntity):
             return TextChunk(
                 document_id=entity.document_id,
@@ -278,9 +262,9 @@ class ChunkService:
             )
         if isinstance(entity, ImageChunkEntity):
             async with _semaphore:
-                image_content = b"".join(
-                    [data async for data in await self._file_storage.download_file(entity.image_url)]
-                )
+                image_content = b"".join([
+                    data async for data in await self._file_storage.download_file(entity.image_url)
+                ])
             return ImageChunk(
                 document_id=entity.document_id,
                 chunk_id=entity.chunk_id,

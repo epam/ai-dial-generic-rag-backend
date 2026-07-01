@@ -50,7 +50,7 @@ class ReferencesParser(BaseTransformOutputParser[ReferenceParserOutput]):
                 chunk_index = chunk_id - 1
 
                 yield ReferenceParserOutput(
-                    content=answer_piece[last_pos: m.start()],
+                    content=answer_piece[last_pos : m.start()],
                     reference=chunk_index,
                 )
 
@@ -59,9 +59,7 @@ class ReferencesParser(BaseTransformOutputParser[ReferenceParserOutput]):
             pos = answer_piece.find("<[", last_pos)
 
             if pos == -1:
-                pos = len(answer_piece) - 1 \
-                    if answer_piece and answer_piece[-1] == "<" \
-                    else len(answer_piece)
+                pos = len(answer_piece) - 1 if answer_piece and answer_piece[-1] == "<" else len(answer_piece)
 
             yield ReferenceParserOutput(content=answer_piece[last_pos:pos])
 

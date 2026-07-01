@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentRecord(BaseModel):
-    """ Data of exported document. """
+    """Data of exported document."""
+
     version: Literal["v2"] = "v2"
     filename: str
     folder: str
@@ -33,7 +34,9 @@ class DocumentRecord(BaseModel):
     indexes: dict[str, list[IndexRecord[Any]]]
 
     @classmethod
-    async def create(cls, document: Document, chunks: list[AnyChunk], indexes: dict[str, list[IndexRecord[Any]]]):
+    async def create(
+        cls, document: Document, chunks: list[AnyChunk], indexes: dict[str, list[IndexRecord[Any]]]
+    ):
         folder, filename = os.path.split(document.display_name)
         return cls(
             filename=filename,
@@ -47,15 +50,8 @@ class DocumentRecord(BaseModel):
         )
 
 
-class SerializedChunk(
-    RootModel[
-        Annotated[
-            AnyChunk,
-            Field(discriminator="chunk_type")
-        ]
-    ]
-):
-    """ Utility model used to deserialize chunks. """
+class SerializedChunk(RootModel[Annotated[AnyChunk, Field(discriminator="chunk_type")]]):
+    """Utility model used to deserialize chunks."""
 
 
 @scoped(ScopeName.channel)
@@ -67,29 +63,23 @@ class ExportService:
 
     @log_execution_time(logger)
     async def export_document(self, document: Document) -> bytes:
-        """ Export given document and its related data. """
+        """Export given document and its related data."""
         logger.info(f"exporting document '{document.display_name}'")
 
         chunks = [chunk async for chunk in self._chunk_service.get_chunks_by_document(document.id)]
         indexes = {
-            index.index_name: [
-                record async for record in index.storage.export(document.id)
-            ]
+            index.index_name: [record async for record in index.storage.export(document.id)]
             for index in await self._channel.get_indexes()
         }
 
         document_record = await DocumentRecord.create(document, chunks, indexes)
 
-        return packb(
-            document_record.model_dump()
-        )
+        return packb(document_record.model_dump())
 
     @log_execution_time(logger)
     async def import_document(self, document_data: bytes) -> Document:
-        """ Import document and its related data. """
-        record = DocumentRecord.model_validate(
-            unpackb(document_data)
-        )
+        """Import document and its related data."""
+        record = DocumentRecord.model_validate(unpackb(document_data))
 
         logger.info(f"importing document '{os.path.join(record.folder, record.filename)}'")
 
@@ -111,16 +101,10 @@ class ExportService:
         # import chunks
         async def _set_document_id(chunks: Iterable[AnyChunk]) -> AsyncGenerator[AnyChunk]:
             for chunk in chunks:
-                yield chunk.model_copy(
-                    update={
-                        "document_id": document.id
-                    }
-                )
+                yield chunk.model_copy(update={"document_id": document.id})
 
         await self._chunk_service.delete_chunks_by_document(document.id)
-        await self._chunk_service.add_chunks(
-            _set_document_id(record.chunks)
-        )
+        await self._chunk_service.add_chunks(_set_document_id(record.chunks))
 
         # import indexes
         for index in await self._channel.get_indexes():
@@ -129,21 +113,13 @@ class ExportService:
 
             index_records = [
                 record.model_copy(
-                    update={
-                        "metadata": record.metadata.model_copy(
-                            update={
-                                "document_id": document.id
-                            }
-                        )
-                    }
+                    update={"metadata": record.metadata.model_copy(update={"document_id": document.id})}
                 )
                 for record in index_data
             ]
             await index.storage.remove(document.id)
             await index.storage.add(index_records)
 
-        logger.info(
-            f"successfully imported document '{record.filename}' as '{document.id}'"
-        )
+        logger.info(f"successfully imported document '{record.filename}' as '{document.id}'")
 
         return await self._document_service.get_document(document.id)

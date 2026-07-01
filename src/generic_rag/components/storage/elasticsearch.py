@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class SearchHitTotal(BaseModel):
-    """ Metadata about the number of matching documents. """
+    """Metadata about the number of matching documents."""
 
     value: int = Field(description="Total number of matching documents.")
     relation: str = Field(
@@ -31,9 +31,7 @@ class SearchHitTotal(BaseModel):
 
 
 class SearchHit(BaseModel):
-    index: str = Field(
-        alias="_index", description="Name of the index containing the returned document."
-    )
+    index: str = Field(alias="_index", description="Name of the index containing the returned document.")
     id: str = Field(
         alias="_id",
         description="Unique identifier for the returned document. This ID is only unique within the returned index.",
@@ -76,19 +74,17 @@ class SearchResult(BaseModel):
     aggregations: dict | None = Field(
         default=None, description="Contains aggregation results if aggregations were requested."
     )
-    scroll_id: str | None = Field(
-        alias="_scroll_id", default=None, description="Scroll identifier."
-    )
+    scroll_id: str | None = Field(alias="_scroll_id", default=None, description="Scroll identifier.")
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ElasticsearchIndexStorageOptions(BaseModel):
-    """ Storage configuration for Elasticsearch indexes. """
+    """Storage configuration for Elasticsearch indexes."""
 
 
 class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
-    """ Storage implementation for text indexes stored in ElasticSearch. """
+    """Storage implementation for text indexes stored in ElasticSearch."""
 
     def __init__(self, index: str, client: AsyncElasticsearch):
         """
@@ -128,11 +124,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
         if documents:
             search_query = {
                 "bool": {
-                    "filter": {
-                        "terms": {
-                            "metadata.document_id": list(documents)
-                        }
-                    },
+                    "filter": {"terms": {"metadata.document_id": list(documents)}},
                     "should": search_query,
                 }
             }
@@ -156,18 +148,18 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
                 "_index": self._index,
                 "content": record.index,
                 "metadata": record.metadata.model_dump(mode="json"),
-            } for record in records
+            }
+            for record in records
         )
         await helpers.async_bulk(self._client, actions)
 
     async def remove(self, *documents: int):
-        """ Remove index records for documents with given IDs. """
+        """Remove index records for documents with given IDs."""
         if not await self._client.indices.exists(index=self._index):
             return
 
         await self._client.delete_by_query(
             index=self._index,
-
             query={
                 "terms": {
                     "metadata.document_id": list(documents),
@@ -176,7 +168,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
         )
 
     def export(self, *documents: int) -> AsyncIterable[IndexRecord[IndexT]]:
-        """ Export index records for documents with given IDs. """
+        """Export index records for documents with given IDs."""
         return self._get_all_records(*documents)
 
     @log_execution_time(logger)
@@ -189,9 +181,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
             index=self._index,
             query={
                 "query": {
-                    "terms": {
-                        "metadata.document_id": list(documents)
-                    },
+                    "terms": {"metadata.document_id": list(documents)},
                 }
             },
         ):
@@ -205,7 +195,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
 class ElasticsearchIndexStorageBackend[StorageOptionsT: ElasticsearchIndexStorageOptions](
     IndexStorageBackend[StorageOptionsT]
 ):
-    """ Storage backend that stores indexes in Elasticsearch. """
+    """Storage backend that stores indexes in Elasticsearch."""
 
     def __init__(self, client: AsyncElasticsearch, index_prefix: str):
         self._client = client
