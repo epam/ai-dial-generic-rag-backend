@@ -1,4 +1,4 @@
-.PHONY: init_venv remove_venv install download_spacy install_all lint format test_unit up run main down cleanup
+.PHONY: init_venv remove_venv install download_spacy install_all lint format test up run main down cleanup
 
 init_venv:
 	poetry env use python3.13
@@ -24,7 +24,7 @@ lint: install
 format: install
 	poetry run ruff check --fix
 
-test_unit: install
+test: install
 	poetry run pytest tests/unit -v
 
 up:
