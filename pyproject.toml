@@ -1,0 +1,126 @@
+[project]
+name = "generic-rag"
+version = "0.0.0"
+description = "Generic RAG is a DIAL application that answers user questions based on data from a collection of preloaded and pre-indexed documents"
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "aidial-sdk[telemetry] (>=0.37.0,<0.38.0)",
+    "fastapi (>=0.138.2,<0.139.0)",
+    "uvicorn[standard] (>=0.49.0,<0.50.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "aiohttp (>=3.14.1,<4.0.0)",
+    "azure-identity (>=1.25.3,<2.0.0)",
+    "sqlalchemy (>=2.0.51,<3.0.0)",
+    "pgvector (>=0.4.2,<0.5.0)",
+    "asyncpg (>=0.31.0,<0.32.0)",
+    "sqlparse (>=0.5.5,<0.6.0)",
+    "cachetools (>=7.0.5,<8.0.0)",
+    "humanfriendly (>=10.0,<11.0)",
+    "jsonschema (>=4.26.0,<5.0.0)",
+    "python-multipart (>=0.0.32,<0.0.33)",
+    "langchain (>=1.3.11,<2.0.0)",
+    "langchain-classic[community,huggingface,openai] (>=1.0.8,<2.0.0)",
+    "torch (>=2.10.0,<3.0.0)",
+    "torchvision (>=0.25.0,<0.26.0)",
+    "unstructured[pdf] (>=0.21.5,<0.22.0)",
+    "pdfplumber (>=0.11.10,<0.12.0)",
+    "python-datauri (>=3.0.2,<4.0.0)",
+    "async-lru (>=2.3.0,<3.0.0)",
+    "json-schema-to-pydantic (>=0.4.11,<0.5.0)",
+    "sentence-transformers (>=5.3.0,<6.0.0)",
+    "yoyo-migrations (>=9.0.0,<10.0.0)",
+    "psycopg[binary] (>=3.3.4,<4.0.0)",
+    "spacy (>=3.8.14,<4.0.0)",
+    "elasticsearch[async] (>=8.19.2,<9.0.0)",
+    "tenacity (>=9.1.4,<10.0.0)",
+    "taskiq (>=0.12.4,<0.13.0)",
+    "python-injection (>=0.26.2,<0.27.0)",
+    "pyhumps (>=3.8.0,<4.0.0)",
+    "pydantic-partial (>=0.11.1,<0.12.0)",
+    "msgpack (>=1.2.1,<2.0.0)",
+    "deepdiff (>=9.1.0,<10.0.0)",
+    "fastmcp (>=3.4.2,<4.0.0)",
+    "typing-inspect (>=0.9.0,<0.10.0)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[tool.poetry.dependencies]
+torch = [
+    { source = "PyPI", platform = "darwin" },
+    { source = "pytorch-cpu", platform = "linux" },
+    { source = "pytorch-cpu", platform = "win32" },
+]
+torchvision = [
+    { source = "PyPI", platform = "darwin" },
+    { source = "pytorch-cpu", platform = "linux" },
+    { source = "pytorch-cpu", platform = "win32" },
+]
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.15.20"
+click = "^8.3.1"
+pytest = "^9.0.3"
+pytest-asyncio = "^1.0.0"
+
+[tool.ruff.format]
+preview = true
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.ruff]
+target-version = "py313"
+line-length = 110
+
+[tool.ruff.lint]
+select = [
+    "B", # flake8-bugbear
+    "A", # flake8-builtins
+    "C4", # flake8-comprehensions
+    "ICN", # flake8-import-conventions
+    "LOG", # flake8-logging
+    "INP", # flake8-no-pep420
+    "PIE", # flake8-pie
+    "T20",  # flake8-print
+    "Q", # flake8-quotes
+    "RET", # flake8-return
+    "SLF", # flake8-self
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "FLY", # flynt
+    "I", # isort
+    "C90", # mccabe comlexity
+    "N", # pep8-naming
+    "PERF", # perflint
+    "E", "W", # pycodestyle
+    "F", # pyflakes
+    "PL", # pylint
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501"  # line too long
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# add these to whitelist in order to overcome B008 error on fastapi routes
+extend-immutable-calls = [
+    "fastapi.File",
+    "fastapi.Header",
+    "fastapi.Depends",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]

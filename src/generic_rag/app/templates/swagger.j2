@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="description" content="SwaggerUI"/>
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.28.0/swagger-ui.css"/>
+    <link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5.28.0/swagger-ui-bundle.js" crossorigin></script>
+<script src="https://unpkg.com/swagger-ui-dist@5.28.0/swagger-ui-standalone-preset.js" crossorigin></script>
+<script>
+    window.onload = () => {
+        window.ui = SwaggerUIBundle({
+            urls: [{% for item in urls %}
+                {url: "{{ item.url }}", name: "{{ item.name }}"},
+            {% endfor %}],
+            dom_id: "#swagger-ui",
+            presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIStandalonePreset
+            ],
+            layout: "StandaloneLayout",
+            defaultModelRendering: "model",
+            defaultModelsExpandDepth: 0,
+            syntaxHighlight: {
+                theme: "tomorrow-night",
+            },
+            validatorUrl: null,  // disable validator badge
+        });
+    };
+</script>
+</body>
+</html>

@@ -1,0 +1,389 @@
+{
+  "applications": {
+    "generic-rag-example": {
+      "displayName": "Generic RAG Example Application",
+      "description": "Generic RAG Example Application.",
+      "descriptionKeywords": [
+        "RAG"
+      ],
+      "application_type_schema_id": "https://dial.epam.com/application_type_schemas/generic-rag",
+      "application_properties": {
+        "metadata_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "DocumentMetadataSchema",
+          "type": "object",
+          "properties": {
+            "category": {
+              "$comment": "string field that can be used for enum-like documents filtering, exposed in mcp",
+              "type": "string",
+              "enable_filtering": true,
+              "enable_in_mcp_retrieve_chunks": true
+            },
+            "published_on": {
+              "$comment": "date field that can be used for documents filtering, exposed in mcp",
+              "type": "string",
+              "format": "date",
+              "enable_filtering": true,
+              "enable_in_mcp_retrieve_chunks": true
+            },
+            "description": {
+              "$comment": "string field with some additional info about document, exposed in mcp, cannot be used for filtering",
+              "type": "string",
+              "enable_in_mcp_retrieve_chunks": true
+            },
+            "tags": {
+              "$comment": "string array field that can be used for filtering, not exposed in mcp",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "enable_filtering": true
+            },
+            "external_url": {
+              "$comment": "a url, cannot be used for filtering nor exposed in mcp",
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "additionalProperties": true
+        },
+        "parsers": [
+          {
+            "type": "unstructured_parser"
+          },
+          {
+            "type": "page_extractor"
+          }
+        ],
+        "indexes": {
+          "keyword-elastic": {
+            "display_name": "Keyword search",
+            "indexer": {
+              "type": "text_normalizer",
+              "language": "english"
+            },
+            "storage": {
+              "backend": "elastic"
+            }
+          },
+          "generic-rag-embeddings": {
+            "display_name": "Semantic search",
+            "indexer": {
+              "type": "text_embeddings",
+              "deployment_name": "generic-rag-embeddings"
+            }
+          }
+        },
+        "retriever": {
+          "type": "classic",
+          "document_selector": {
+            "type": "explicit"
+          }
+        },
+        "generation": {
+          "type": "default",
+          "llm": {
+            "deployment_name": "gpt-4.1-2025-04-14"
+          }
+        }
+      }
+    }
+  },
+  "applicationTypeSchemas": [
+    {
+      "$schema": "https://dial.epam.com/application_type_schemas/schema#",
+      "$id": "https://dial.epam.com/application_type_schemas/generic-rag",
+      "dial:applicationTypeCompletionEndpoint": "${GENERIC_RAG_URL}/openai/deployments/generic-rag/chat/completions",
+      "dial:applicationTypeConfigurationEndpoint": "${GENERIC_RAG_URL}/openai/deployments/generic-rag/configuration",
+      "dial:applicationTypeSchemaEndpoint": "${GENERIC_RAG_URL}/application-type-schema",
+      "dial:applicationTypeDisplayName": "Generic RAG",
+      "dial:applicationTypeIconUrl": "rag.svg",
+      "dial:applicationTypeRoutes": {
+        "channel": {
+          "dial:paths": [
+            "/channel(/[^/]+)*$"
+          ],
+          "dial:rewritePath": true,
+          "dial:methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ],
+          "dial:upstreams": [
+            {
+              "dial:endpoint": "${GENERIC_RAG_URL}"
+            }
+          ]
+        }
+      },
+      "dial:applicationTypeMcp": {
+        "dial:endpoint": "${GENERIC_RAG_URL}/mcp/streamable-http",
+        "dial:transport": "HTTP",
+        "dial:mcpConfigDelivery": "HEADER",
+        "dial:forwardPerRequestKey": true
+      },
+      "dial:appendApplicationPropertiesHeader": false
+    }
+  ],
+  "models": {
+    "generic-rag-embeddings": {
+      "type": "embedding",
+      "endpoint": "${GENERIC_RAG_URL}/openai/deployments/generic-rag-embeddings/embeddings"
+    },
+    "gpt-4-turbo": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4-turbo/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4-turbo/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4 Turbo (Legacy)",
+      "displayVersion": "Latest",
+      "description": "GPT-4 Turbo is an advanced version of the GPT-4 language model developed by OpenAI.\n\nIt was released as a major refinement of the existing model, with improvements in efficiency and speed [1]. GPT-4 Turbo introduced several new features, including faster responses, support for longer inputs up to 128K tokens in length, and improved knowledge of recent events [2]. It also has a larger context window compared to its predecessor, which allows it to analyze and remember more information",
+      "descriptionKeywords": [
+        "Text Generation"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4-turbo-2024-04-09": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4-turbo-2024-04-09/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4-turbo-2024-04-09/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4 Turbo (Legacy)",
+      "displayVersion": "2024-04-09",
+      "description": "GPT-4 Turbo is an advanced version of the GPT-4 language model developed by OpenAI.\n\nIt was released as a major refinement of the existing model, with improvements in efficiency and speed [1]. GPT-4 Turbo introduced several new features, including faster responses, support for longer inputs up to 128K tokens in length, and improved knowledge of recent events [2]. It also has a larger context window compared to its predecessor, which allows it to analyze and remember more information",
+      "descriptionKeywords": [
+        "Text Generation"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4o-2024-05-13": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-2024-05-13/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-2024-05-13/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4o (Omni)",
+      "displayVersion": "2024-05-13",
+      "description": "GPT-4o is a multimodal generative pre-trained transformer developed by OpenAI and released in May 2024.\n\nIt is OpenAI new flagship model that integrates text, vision, and audio capabilities, setting a new standard for generative and conversational AI experiences. It is engineered for speed and efficiency, with an advanced ability to handle complex queries with minimal resources.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Functions"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4o-2024-08-06": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-2024-08-06/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-2024-08-06/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4o (Omni)",
+      "displayVersion": "2024-08-06",
+      "description": "GPT-4o is a multimodal generative pre-trained transformer developed by OpenAI and released in May 2024.\n\nIt is OpenAI new flagship model that integrates text, vision, and audio capabilities, setting a new standard for generative and conversational AI experiences. It is engineered for speed and efficiency, with an advanced ability to handle complex queries with minimal resources.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Functions",
+        "Structured Output"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4o-mini-2024-07-18": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-mini-2024-07-18/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-mini-2024-07-18/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4o mini",
+      "displayVersion": "2024-07-18",
+      "description": "The GPT-4o mini model is a smaller, faster, and cheaper version of the GPT-4o AI model developed by OpenAI.\n\nIt is designed to replace the GPT-3.5 Turbo model, which was the default for free ChatGPT users and the cheapest option for developers building applications on OpenAI technology",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Functions",
+        "Structured Output"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4.1-2025-04-14": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4.1-2025-04-14/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4.1-2025-04-14/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4.1",
+      "displayVersion": "2025-04-14",
+      "description": "The latest iteration of the GPT-4o model, trained to excel at coding and instruction-following tasks. This model will improve the quality of agentic workflows and accelerate the productivity of developers across all scenarios.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Structured Output",
+        "Functions"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4.1-mini-2025-04-14": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4.1-mini-2025-04-14/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4.1-mini-2025-04-14/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4.1 mini",
+      "displayVersion": "2025-04-14",
+      "description": "A lightweight version of GPT-4.1, ideal for quick coding tasks, simple instruction following, and applications where low latency is critical",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Structured Output",
+        "Functions"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "gpt-4.1-nano-2025-04-14": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4.1-nano-2025-04-14/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4.1-nano-2025-04-14/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "*/*"
+      ],
+      "displayName": "OpenAI GPT-4.1 nano",
+      "displayVersion": "2025-04-14",
+      "description": "A fast and efficient version of GPT-4.1, optimized for coding and instruction-following in resource-constrained environments.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Image Recognition",
+        "Structured Output",
+        "Functions"
+      ],
+      "iconUrl": "gpt4.svg"
+    },
+    "text-embedding-ada-002": {
+      "type": "embedding",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/text-embedding-ada-002/embeddings",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/text-embedding-ada-002/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "text-embedding-3-small": {
+      "type": "embedding",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/text-embedding-3-small/embeddings",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/text-embedding-3-small/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "text-embedding-3-large": {
+      "type": "embedding",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/text-embedding-3-large/embeddings",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/text-embedding-3-large/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "multimodalembedding@001": {
+      "type": "embedding",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/multimodalembedding@001/embeddings",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/multimodalembedding@001/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "azure-ai-vision-embeddings": {
+      "type": "embedding",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/azure-ai-vision-embeddings/embeddings",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/azure-ai-vision-embeddings/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    }
+  },
+  "keys": {
+    "dial_api_key": {
+      "project": "demo",
+      "role": "default"
+    }
+  },
+  "roles": {
+    "default": {
+      "limits": {
+        "generic-rag-example": {},
+        "generic-rag-embeddings": {},
+        "gpt-4-turbo": {},
+        "gpt-4-turbo-2024-04-09": {},
+        "gpt-4o-2024-05-13": {},
+        "gpt-4o-2024-08-06": {},
+        "gpt-4o-mini-2024-07-18": {},
+        "gpt-4.1-2025-04-14": {},
+        "gpt-4.1-mini-2025-04-14": {},
+        "gpt-4.1-nano-2025-04-14": {},
+        "text-embedding-ada-002": {},
+        "text-embedding-3-small": {},
+        "text-embedding-3-large": {},
+        "multimodalembedding@001": {},
+        "azure-ai-vision-embeddings": {}
+      }
+    }
+  }
+}
