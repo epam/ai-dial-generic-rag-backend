@@ -2,9 +2,19 @@ import logging
 import os
 import re
 import sys
+from typing import Self
 
 import sqlalchemy
-from pydantic import BaseModel, ByteSize, Field, HttpUrl, SecretStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ByteSize,
+    Field,
+    HttpUrl,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +22,23 @@ logger = logging.getLogger(__name__)
 class DatabaseConfig(BaseModel):
     """Configuration for database connection."""
 
-    host: str = Field(default="localhost", description="Postgresql database host")
+    host: str = Field(description="Postgresql database host")
     port: int = Field(default=5432, description="Postgresql database port")
-    dbname: str = Field(default="postgres", description="Postgresql database name")
-    username: str = Field(default="postgres", description="Postgresql database username")
-    password: SecretStr = Field(
-        default="postgres",
-        description="Database password used by default username/password auth",
+    dbname: str = Field(description="Postgresql database name")
+    username: str = Field(description="Postgresql database username")
+    password: SecretStr | None = Field(
+        None, description="Database password, if you plan to use password authentication"
     )
     msi_enabled: bool = Field(
         default=False,
-        description="Use MSI authentication for database instead of default username/password",
+        description="Use MSI authentication for database access",
     )
+
+    @model_validator(mode="after")
+    def check_db_auth(self) -> Self:
+        if not self.password or self.msi_enabled:
+            raise ValueError("either 'password' or 'msi_enabled' should be set")
+        return self
 
     def get_url(self):
         return sqlalchemy.engine.URL.create(
@@ -39,9 +54,9 @@ class DatabaseConfig(BaseModel):
 class ElasticsearchSettings(BaseModel):
     """Configuration for Elasticsearch connection."""
 
-    url: HttpUrl = "http://localhost:9200"
-    username: str = "elastic"
-    password: SecretStr = "elastic"
+    url: HttpUrl
+    username: str
+    password: SecretStr
     index_prefix: str | None = None
 
     @field_validator("index_prefix", mode="after")
@@ -94,8 +109,11 @@ class InMemoryCacheSettings(BaseModel):
 class ApplicationSettings(BaseModel):
     """Main application settings class."""
 
-    dial_url: HttpUrl = Field(..., description="Url to the dial core.")
-    dial_public_url: HttpUrl | None = Field(None, description="Url where dial core is publicly accessible.")
+    dial_url: HttpUrl = Field(description="URL to the DIAL core.")
+    dial_public_url: HttpUrl | None = Field(
+        None,
+        description="URL where DIAL core is publicly accessible (used to generate interactive documentation).",
+    )
     in_memory_cache: InMemoryCacheSettings = InMemoryCacheSettings()
     database: DatabaseConfig = Field(..., description="Configuration for postgres/vector database connection")
     elasticsearch: ElasticsearchSettings | None = Field(None, description="Elasticsearch settings")
@@ -103,24 +121,24 @@ class ApplicationSettings(BaseModel):
 
 def get_app_settings() -> ApplicationSettings:
     raw_config = {
-        "dial_url": os.environ.get("DIAL_URL", "http://localhost:8080"),
+        "dial_url": os.environ.get("DIAL_URL"),
         "dial_public_url": os.environ.get("DIAL_PUBLIC_URL"),
         "in_memory_cache": {
-            "enabled": os.environ.get("IN_MEMORY_CACHE_ENABLED", "true"),
+            "enabled": os.environ.get("IN_MEMORY_CACHE_ENABLED", "yes"),
             "capacity": os.environ.get("IN_MEMORY_CACHE_CAPACITY", "128MiB"),
         },
         "database": {
-            "host": os.getenv("DB_HOST", "localhost"),
+            "host": os.getenv("DB_HOST"),
             "port": os.getenv("DB_PORT", "5432"),
-            "dbname": os.getenv("DB_NAME", "postgres"),
-            "username": os.getenv("DB_USERNAME", "postgres"),
-            "password": os.getenv("DB_PASSWORD", "postgres"),
-            "msi_enabled": os.getenv("DB_MSI_ENABLED", "false"),
+            "dbname": os.getenv("DB_NAME"),
+            "username": os.getenv("DB_USERNAME"),
+            "password": os.getenv("DB_PASSWORD"),
+            "msi_enabled": os.getenv("DB_MSI_ENABLED", "no"),
         },
         "elasticsearch": {
             "url": os.getenv("ELASTICSEARCH_URL"),
-            "username": os.getenv("ELASTICSEARCH_USERNAME", "elastic"),
-            "password": os.getenv("ELASTICSEARCH_PASSWORD", "elastic"),
+            "username": os.getenv("ELASTICSEARCH_USERNAME"),
+            "password": os.getenv("ELASTICSEARCH_PASSWORD"),
             "index_prefix": os.getenv("ELASTICSEARCH_INDEX_PREFIX"),
         }
         if os.getenv("ELASTICSEARCH_URL")

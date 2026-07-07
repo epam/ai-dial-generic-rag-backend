@@ -1,98 +1,201 @@
-# AI DIAL Generic RAG Backend
+<h1 align="center">
+         AI DIAL Generic RAG Backend
+    </h1>
+    <p align="center">
+        <p align="center">
+        <a href="https://dialx.ai/">
+          <img src="https://dialx.ai/logo/dialx_logo.svg" alt="About DIALX">
+        </a>
+    </p>
+<h4 align="center">
+    <a href="https://discord.gg/ukzj9U9tEe">
+        <img src="https://img.shields.io/static/v1?label=DIALX%20Community%20on&message=Discord&color=blue&logo=Discord&style=flat-square" alt="Discord">
+    </a>
+</h4>
 
 **Generic RAG** is a DIAL application that answers user questions based on data from collection of preloaded and pre-indexed documents.
 
-- [Local Run with Docker](#local-run-with-docker)
-  - [Pre-requisites, local run with Docker](#pre-requisites-local-run-with-docker)
-    - [1. Install Make](#1-install-make)
-    - [2. Install Docker Engine and Docker Compose suitable for your OS](#2-install-docker-engine-and-docker-compose-suitable-for-your-os)
-    - [3. Environment variables](#3-environment-variables)
-  - [Run the application](#run-the-application)
-- [Local Development](#local-development)
-  - [Pre-requisites, local development](#pre-requisites-local-development)
-    - [1. Install Python 3.13](#1-install-python-313)
-    - [2. Install Poetry](#2-install-poetry)
-  - [Run the application](#run-the-application-1)
-- [MCP Server](#mcp-server)
-- [Deployment](#deployment)
-  - [Pre-requisites, deployment](#pre-requisites-deployment)
-  - [Configuration](#configuration)
+<!-- TOC -->
+* [Quick Start](#quick-start)
+* [MCP Server](#mcp-server)
+* [Configuration](#configuration)
+  * [Prerequisites](#prerequisites)
+  * [Environment Variables](#environment-variables)
+  * [DIAL Core Configuration](#dial-core-configuration)
+* [Local Development](#local-development)
+  * [Pre-requisites](#pre-requisites)
+  * [Run the application](#run-the-application)
+<!-- TOC -->
+# Quick Start
 
-## Local Run with Docker
+Install [Make](https://www.gnu.org/software/make/), Docker, and Docker Compose suitable for your OS.
 
-### Pre-requisites, local run with Docker
+* [Docker Desktop](https://docs.docker.com/desktop/)
+* [Docker Engine and Docker Compose on Linux](https://docs.docker.com/engine/install/)
+* [Rancher Desktop](https://rancherdesktop.io/) on Windows or MacOS
 
-#### 1. Install [Make](https://www.gnu.org/software/make/)
-
-- MacOS - should already be installed
-- [Windows](https://gnuwin32.sourceforge.net/packages/make.htm)
-- [Windows, using Chocolatey](https://community.chocolatey.org/packages/make)
-- Make sure that `make` is in the PATH (run `which make`).
-
-#### 2. Install Docker Engine and Docker Compose suitable for your OS
-
-Since Docker Desktop requires a paid license for commercial use, you can use one of the following alternatives:
-
-- [Docker Engine and Docker Compose on Linux](https://docs.docker.com/engine/install/)
-- [Rancher Desktop](https://rancherdesktop.io/) on Windows or MacOS
-
-#### 3. Environment variables
-
-Follow the next steps to prepare environment variable
-
-- Create `.env` file using `.env.template`
+Create `.env` file using `.env.template`:
 
 ```bash
 cp .env.template .env
 ```
 
-- Put correct value for `REMOTE_DIAL_URL` and `REMOTE_DIAL_API_KEY` variables for upstream DIAL
-  env so that you local setup will be able to proxy model requests there.
+Put there correct values for `REMOTE_DIAL_URL` and `REMOTE_DIAL_API_KEY` variables for
+upstream DIAL env so that you local setup will be able to proxy model requests here.
 
-### Run the application
-
-- Run the application (the images will be built automatically)
+Run the application (the images will be built automatically):
 
 ```bash
 make run
 ```
 
-- Now you can open <http://localhost:3000> for chat and <http://localhost:5000/docs> for swagger documentation
-- Use `make down` to stop the containers that continue running in background
-- Use `make cleanup` to clean data volumes created during run
-- If you want to add new DIAL application of Generic RAG type (with different channel configuration), you can
-  add it into `applications` section of `./dial_conf/config-template.json` file (see existing applications as references).
-  Do not forget to restart `core` service after doing so.
+> [!IMPORTANT]
+> If your OS is not Linux, Docker Engine could already support `host.docker.internal` resolution,
+> and defining it in the way as it's done in `docker-compose.yml` will break it. So if this is the case,
+> comment out the `extra_hosts` section for the `core` service in `docker-compose.yml`.
 
-> ⚠️ **macOS users:** `elasticsearch:8.19.6` container might not work properly on macOS.
-> You can use `elasticsearch:8.15.3` instead.
+* Now you can open <http://localhost:3000> for chat and <http://localhost:5000/docs> for swagger documentation
+* Use `make down` to stop the containers that continue running in background
+* Use `make cleanup` to clean data volumes created during run
 
-## Local Development
+Since Generic RAG is Application Runner, you need DIAL application to work with.
+Applications can be created either by defining it in `applications` section of DIAL configuration,
+or by using [DIAL API](https://dialx.ai/dial_api#tag/Applications/operation/saveCustomApplication).
 
-### Pre-requisites, local development
+The repository already has preconfigured example application `generic-rag-example` which can be used as a reference.
 
-In addition to [Pre-requisites for local run with Docker](#pre-requisites-local-run-with-docker), follow the next steps.
+# MCP Server
 
-#### 1. Install Python 3.13
+Generic RAG includes MCP server for coding agents (Cursor, Claude Code).
+See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
+
+# Configuration
+
+## Prerequisites
+
+* DIAL installation with DIAL core `0.44.0` or higher
+* Postgresql database with `pgvector` extension
+* (optional) Elasticsearch installation
+
+## Environment Variables
+
+|Variable|Required|Description|Available Values|Default Values|
+|---|---|---|---|---|
+| `DIAL_URL` | Yes | URL to the DIAL core. |  |  |
+| `DIAL_PUBLIC_URL` | No | URL where DIAL core is publicly accessible (used to generate interactive documentation). |  |  |
+| `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`, `no` | `yes` |
+| `IN_MEMORY_CACHE_CAPACITY` | No | In-memoty cache capacity (examples: `128MiB`, `1GiB`, `2.5GiB`) |  | `128MiB` |
+| `DB_HOST` | Yes | Postgresql database host |  |  |
+| `DB_PORT` | No | Postgresql database port |  | `5432` |
+| `DB_NAME` | Yes | Postgresql database name |  |  |
+| `DB_USERNAME` | Yes | Postgresql database username |  |  |
+| `DB_PASSWORD` | No | Database password, if you plan to use password authentication |  |  |
+| `DB_MSI_ENABLED` | No | Use MSI authentication for database access |  | `No` |
+| `ELASTICSEARCH_URL` | No | URL of Elasticsearch instance |  |  |
+| `ELASTICSEARCH_USERNAME` | No | Elasticsearch user for authentication |  |  |
+| `ELASTICSEARCH_PASSWORD` | No | Elasticsearch password for authentication |  |  |
+| `ELASTICSEARCH_INDEX_PREFIX` | No | The prefix that will be added to all indexes created in Elasticsearch |  |  |
+
+> [!NOTE]
+> * you should either set `DB_PASSWORD` (to use password authentication) enable MSI by setting `DB_MSI_ENABLED` to `yes`;
+>   if both `DB_PASSWORD` and `DB_MSI_ENABLED` are defined, the MSI authentication will be used,
+>   and the value of `DB_PASSWORD` will be ignored.
+> * if `ELASTICSEARCH_URL` is not set (you are not planning to use Elasticsearch to store indexes),
+>   other variables with `ELASTICSEARCH_` prefix will be ignored.
+> * if you use single instance of Elasticsearch for multiple generic-rag deployments, setting
+>   `ELASTICSEARCH_INDEX_PREFIX` is mandatory, and it should be unique for every single deployment of generic-rag.
+
+## DIAL Core Configuration
+
+In order to enable Generic RAG applications support by the DIAL installation, DIAL configuration file
+(`config.json`) should contain the application type schema in `applicationTypeSchemas` section as illustrated
+by the following snippet:
+
+```json
+{ 
+  "applicationTypeSchemas": [
+    {
+      "$schema": "https://dial.epam.com/application_type_schemas/schema#",
+      "$id": "https://dial.epam.com/application_type_schemas/generic-rag",
+      "dial:applicationTypeCompletionEndpoint": "<GENERIC_RAG_URL>/openai/deployments/generic-rag/chat/completions",
+      "dial:applicationTypeConfigurationEndpoint": "<GENERIC_RAG_URL>/openai/deployments/generic-rag/configuration",
+      "dial:applicationTypeSchemaEndpoint": "<GENERIC_RAG_URL>/application-type-schema",
+      "dial:applicationTypeDisplayName": "Generic RAG",
+      "dial:applicationTypeIconUrl": "rag.svg",
+      "dial:applicationTypeRoutes": {
+        "channel": {
+          "dial:paths": [
+            "/channel(/[^/]+)*$"
+          ],
+          "dial:rewritePath": true,
+          "dial:methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ],
+          "dial:upstreams": [
+            {
+              "dial:endpoint": "<GENERIC_RAG_URL>"
+            }
+          ]
+        }
+      },
+      "dial:applicationTypeMcp": {
+        "dial:endpoint": "<GENERIC_RAG_URL>/mcp/streamable-http",
+        "dial:transport": "HTTP",
+        "dial:mcpConfigDelivery": "HEADER",
+        "dial:forwardPerRequestKey": true
+      },
+      "dial:appendApplicationPropertiesHeader": false
+    }
+  ]
+}
+```
+
+> [!IMPORTANT]
+> Replace `<GENERIC_RAG_URL>` with correct URL of Generic RAG service where DIAL core will send requests
+> (this URL can be internal URL available only within cluster when deployed with kubernetes).
+
+# Local Development
+
+## Pre-requisites
+
+**1. Install [Make](https://www.gnu.org/software/make/)**
+
+* MacOS - should already be installed
+* [Windows](https://gnuwin32.sourceforge.net/packages/make.htm)
+* [Windows, using Chocolatey](https://community.chocolatey.org/packages/make)
+* Make sure that `make` is in the PATH (run `which make`).
+
+**2. Install Docker Engine and Docker Compose suitable for your OS.**
+
+You can use one of the following alternatives:
+
+* [Docker Desktop](https://docs.docker.com/desktop/)
+* [Docker Engine and Docker Compose on Linux](https://docs.docker.com/engine/install/)
+* [Rancher Desktop](https://rancherdesktop.io/) on Windows or MacOS
+
+**3. Install Python 3.13**
 
 Direct installation:
 
-- [MacOS, using Homebrew](https://formulae.brew.sh/formula/python@3.13) - `brew install python@3.13`
-- [Windows or MacOS, using official repository](https://www.python.org/downloads/)
-- [Windows, using Chocolatey](https://community.chocolatey.org/packages/python313)
-- Make sure that `python3` or `python3.13` is in the PATH and works properly (run `python3.13 --version`).
+* [MacOS, using Homebrew](https://formulae.brew.sh/formula/python@3.13) - `brew install python@3.13`
+* [Windows or MacOS, using official repository](https://www.python.org/downloads/)
+* [Windows, using Chocolatey](https://community.chocolatey.org/packages/python313)
+* Make sure that `python3` or `python3.13` is in the PATH and works properly (run `python3.13 --version`).
 
 Alternative: use [pyenv](https://github.com/pyenv/pyenv?tab=readme-ov-file#installation):
 
-- `pyenv` allows to manage different python versions on the same machine
-- execute following from the repository root folder:
+* `pyenv` allows to manage different python versions on the same machine
+* execute following from the repository root folder:
 
   ```bash
   pyenv install 3.13
   pyenv local 3.13  # use Python 3.13 for the current project
   ```
 
-#### 2. Install [Poetry](https://python-poetry.org/docs/#installation)
+**4. Install [Poetry](https://python-poetry.org/docs/#installation)**
 
 Recommended way - system-wide, independent of any particular python venv:
 
@@ -101,94 +204,60 @@ Recommended way - system-wide, independent of any particular python venv:
   use [official installer](https://python-poetry.org/docs/#installing-with-the-official-installer)
 - Make sure that `poetry` is in the PATH and works properly (run `poetry --version`).
 
-### Run the application
-
-- Create virtual environment for the project
+**5. Create virtual environment for the project**
 
 ```bash
 make init_venv
 ```
 
-- Install python dependencies required by the app
+**6. Install python dependencies required by the app**
 
 ```bash
 make install_all
 ```
 
-- Run the services the application depends on
+**7. Create `.env` file using `.env.template`**
+
+```bash
+cp .env.template .env
+```
+
+Then put correct value for `REMOTE_DIAL_URL` and `REMOTE_DIAL_API_KEY` variables for upstream DIAL 
+env so that you local setup will be able to proxy model requests here.
+
+**8. Run the services the application depends on**
 
 ```bash
 make up
 ```
 
+> [!NOTE]
 > ⚠️ **macOS users:** `elasticsearch:8.19.6` container might not work properly on macOS.
 > You can use `elasticsearch:8.15.3` instead.
 
-- Now you can run the app:
-  - using python:
+## Run the application
 
-    ```bash
-    source .venv/bin/activate  # activate virtual environment
-    python ./src/main.py
-    ```
+```bash
+source .venv/bin/activate  # activate virtual environment
+python ./src/main.py
+```
 
-  - using make:
+Or alternatively, use `make` command:
 
-    ```bash
-    make main  # handles environment automatically
-    ```
+```bash
+make main  # handles environment automatically
+```
 
-  - or use you favorite IDE
+Or use you favorite IDE.
 
-Since generic-rag is Application Runner, you need to create DIAL application to work with, which can be done
-either by defining the application in DIAL's `config.json` or by creating the application via [DIAL API](https://dialx.ai/dial_api#tag/Applications/operation/saveCustomApplication).
+Now you can open:
+* <http://localhost:3000> for DIAL Chat UI
+* <http://localhost:5000/docs> for generic-rag swagger documentation
 
-The repository already has preconfigured example application `generic-rag-example` which can be used as a reference.
+> [!IMPORTANT]
+> If your OS is not Linux, Docker Engine could already support `host.docker.internal` resolution,
+> and defining it in the way as it's done in `docker-compose.yml` will break it. So if this is the case,
+> comment out the `extra_hosts` section for the `core` service in `docker-compose.yml`.
 
-- Now you can open:
-    - <http://localhost:3000> for DIAL Chat UI
-    - <http://localhost:5000/docs> for generic-rag swagger documentation
-
-> ⚠️ **macOS users:** If core container is not able to reach the generic app app on your host machine, comment out the `extra_hosts` section
-> for the `core` service in `docker-compose.yml`. Docker on MacOS already provides `host.docker.internal`
-> natively, and the `extra_hosts: host.docker.internal:host-gateway` directive overrides it with an
-> incorrect IP (`172.17.0.1`), preventing the core container from reaching the app on host machine.
-
-- Use `make down` to stop the containers that continue running in background
-- Use `make cleanup` to clean data volumes created during run
-
-## MCP Server
-
-Generic RAG includes MCP server for coding agents (Cursor, Claude Code) available via a toolset.
-See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
-
-## Deployment
-
-### Pre-requisites, deployment
-
-In order to deploy Generic RAG service, the following dependencies should be created:
-
-- separate DIAL api key for indexing purposes
-- PostgreSQL database with created `pqvector` extension and optionally with configured MSI for authentication
-
-> NOTE: in order to make sure the database has `pgvector` extension run the following query:
->
-> ```sql
-> create extension if not exists vector;
-> ```
-
-### Configuration
-
-Once these dependencies are set up, the following environment variables should be specified during deployment:
-
-- `DIAL_URL`: URL of dial core
-- `DB_HOST`: database host
-- `DB_PORT`: database port
-- `DB_NAME`: database name
-- `DB_USERNAME`: database user
-- `DB_PASSWORD`: the database user password if default password authentication should be used,
-  OR `DB_MSI_ENABLED` (can be `1` or `true`) to use MSI authentication instead;
-  if both `DB_PASSWORD` and `DB_MSI_ENABLED` are specified, the value of `DB_PASSWORD` will be ignored.
-- `ELASTICSEARCH_URL` (if you plan to use Elasticsearch to store indexes)
-
-Once the service is deployed, required channels can be configured in DIAL core's `config.json`.
+* Use `make down` to stop the containers that continue running in background
+* Use `make cleanup` to clean data volumes created during run
