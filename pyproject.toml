@@ -1,6 +1,6 @@
 [project]
 name = "generic-rag"
-version = "0.1.0rc0"
+version = "0.1.0"
 description = "Generic RAG is a DIAL application that answers user questions based on data from a collection of preloaded and pre-indexed documents"
 license = "Apache-2.0"
 readme = "README.md"
