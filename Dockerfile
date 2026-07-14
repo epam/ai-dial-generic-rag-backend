@@ -26,14 +26,14 @@ RUN apt-get update && \
 
 # creates a non-root user with an explicit UID and adds permission to access the app folder
 # for more info, please refer to https://aka.ms/vscode-docker-python-configure-containers
-RUN adduser -u 5678 --disabled-password --gecos "" appuser && \
+RUN adduser -u 1001 --disabled-password --gecos "" appuser && \
     chown -R appuser /opt/app
 
 USER appuser
 
 RUN mkdir ~/.cache
 
-RUN --mount=type=cache,target=/home/appuser/.cache/pip,uid=5678 \
+RUN --mount=type=cache,target=/home/appuser/.cache/pip,uid=1001 \
     --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
     pip install -r requirements.txt --no-warn-script-location
 
