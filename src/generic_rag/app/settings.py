@@ -36,7 +36,7 @@ class DatabaseConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_db_auth(self) -> Self:
-        if not self.password or self.msi_enabled:
+        if not (self.password or self.msi_enabled):
             raise ValueError("either 'password' or 'msi_enabled' should be set")
         return self
 

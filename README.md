@@ -83,14 +83,14 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 |---|---|---|---|---|
 | `DIAL_URL` | Yes | URL to the DIAL core. |  |  |
 | `DIAL_PUBLIC_URL` | No | URL where DIAL core is publicly accessible (used to generate interactive documentation). |  |  |
-| `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`, `no` | `yes` |
+| `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`/`true`/`1`, `no`/`false`/`0` | `yes` |
 | `IN_MEMORY_CACHE_CAPACITY` | No | In-memoty cache capacity (examples: `128MiB`, `1GiB`, `2.5GiB`) |  | `128MiB` |
 | `DB_HOST` | Yes | Postgresql database host |  |  |
 | `DB_PORT` | No | Postgresql database port |  | `5432` |
 | `DB_NAME` | Yes | Postgresql database name |  |  |
 | `DB_USERNAME` | Yes | Postgresql database username |  |  |
 | `DB_PASSWORD` | No | Database password, if you plan to use password authentication |  |  |
-| `DB_MSI_ENABLED` | No | Use MSI authentication for database access |  | `No` |
+| `DB_MSI_ENABLED` | No | Use MSI authentication for database access | `yes`/`true`/`1`, `no`/`false`/`0` | `no` |
 | `ELASTICSEARCH_URL` | No | URL of Elasticsearch instance |  |  |
 | `ELASTICSEARCH_USERNAME` | No | Elasticsearch user for authentication |  |  |
 | `ELASTICSEARCH_PASSWORD` | No | Elasticsearch password for authentication |  |  |
