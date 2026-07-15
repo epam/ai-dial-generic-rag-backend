@@ -37,8 +37,12 @@ RUN --mount=type=cache,target=/home/appuser/.cache/pip,uid=1001 \
     --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
     pip install -r requirements.txt --no-warn-script-location
 
-# downloading sentence transformer model
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('epam/bge-small-en', device='cpu')"
+# download models
+ENV BGE_EMBEDDING_MODEL_PATH=/home/appuser/bge-small-en
+
+RUN python -c "\
+from sentence_transformers import SentenceTransformer; \
+SentenceTransformer('epam/bge-small-en', device='cpu').save('$BGE_EMBEDDING_MODEL_PATH')"
 
 RUN python -m spacy download en_core_web_sm && \
     python -m spacy download uk_core_news_sm

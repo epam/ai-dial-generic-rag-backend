@@ -1,4 +1,5 @@
 import logging
+import os
 from functools import cache
 
 from aidial_sdk.embeddings import Embedding, Embeddings, Request, Response, Usage
@@ -9,13 +10,13 @@ from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
 
-BUILTIN_EMBEDDING_MODEL_NAME = "epam/bge-small-en"
+BUILTIN_EMBEDDING_MODEL = os.getenv("BGE_EMBEDDING_MODEL_PATH", "epam/bge-small-en")
 
 
 @cache
 def _get_builtin_embeddings_model():
     return HuggingFaceEmbeddings(
-        model_name=BUILTIN_EMBEDDING_MODEL_NAME,
+        model_name=BUILTIN_EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={
             "normalize_embeddings": True,
