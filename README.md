@@ -121,7 +121,7 @@ by the following snippet:
       "dial:applicationTypeConfigurationEndpoint": "<GENERIC_RAG_URL>/openai/deployments/generic-rag/configuration",
       "dial:applicationTypeSchemaEndpoint": "<GENERIC_RAG_URL>/application-type-schema",
       "dial:applicationTypeDisplayName": "Generic RAG",
-      "dial:applicationTypeIconUrl": "rag.svg",
+      "dial:applicationTypeIconUrl": "RAG_files_search.svg",
       "dial:applicationTypeRoutes": {
         "channel": {
           "dial:paths": [
