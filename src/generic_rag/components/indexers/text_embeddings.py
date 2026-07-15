@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class TextEmbeddingsConfig(BaseModel):
     deployment_name: str = Field(
         ...,
-        description="Name of a model deployment to use.",
+        description="Name of a text embeddings model to use.",
         examples=[
             "text-embedding-ada-002",
             "text-embedding-3-small",
@@ -44,7 +44,7 @@ class TextEmbeddingsIndexer(TextIndexer[VectorType, TextEmbeddingsConfig]):
     async def _index_texts(
         self, texts: list[str], record_metas: list[IndexedEntityMeta]
     ) -> Collection[IndexRecord[VectorType]]:
-        embeddings = await self._model.aembed_documents(texts, chunk_size=250)
+        embeddings = await self._model.aembed_documents(texts)
 
         return [
             IndexRecord(index=index, metadata=meta)
