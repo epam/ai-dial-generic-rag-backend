@@ -43,6 +43,7 @@ dependencies = [
     "deepdiff (>=9.1.0,<10.0.0)",
     "fastmcp (>=3.4.2,<4.0.0)",
     "typing-inspect (>=0.9.0,<0.10.0)",
+    "json-repair (>=0.61.4,<0.62.0)",
 ]
 
 [tool.poetry]
