@@ -6,6 +6,7 @@ from functools import reduce
 from typing import Annotated, Literal
 
 from injection import afind_instance, inject
+from opentelemetry.trace import get_tracer
 from pydantic import BaseModel, Field, TypeAdapter, create_model
 
 from generic_rag.types import (
@@ -23,6 +24,7 @@ from generic_rag.types import (
 )
 from generic_rag.utils.profile import log_execution_time
 
+tracer = get_tracer(__name__)
 logger = logging.getLogger(__name__)
 
 
@@ -170,6 +172,8 @@ class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index
             for meta in await self._storage.relevance_search(indexed_query, limit, documents)
         ]
 
+    @tracer.start_as_current_span("index-update")
+    @log_execution_time(logger)
     async def update(self, chunks: Iterable[AnyChunk]):
         """
         Update index with given chunks.

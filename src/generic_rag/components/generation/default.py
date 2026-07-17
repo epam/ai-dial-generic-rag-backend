@@ -8,7 +8,6 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
-from pydantic.json_schema import SkipJsonSchema
 
 from generic_rag.channel import Channel
 from generic_rag.components.generation.prompts import DefaultGenerationPrompt
@@ -61,7 +60,7 @@ class DefaultAnswerGeneratorConfig(BaseModel):
         default=LlmConfig(),
         description="Configuration for the LLM used in the query chain.",
     )
-    system_prompt_template_override: str | SkipJsonSchema[None] = Field(
+    system_prompt_template_override: str | None = Field(
         default=None,
         description="Allow to override the system prompt template.",
     )

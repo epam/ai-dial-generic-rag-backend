@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class ImageEmbeddingsConfig(BaseModel):
     deployment_name: str = Field(
         ...,
-        description="Name of a model deployment to use.",
+        description="Name of an image embeddings model to use.",
         examples=[
             "multimodalembedding@001",
             "azure-ai-vision-embeddings",

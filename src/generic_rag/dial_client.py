@@ -2,7 +2,7 @@ import io
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
-from typing import Any, BinaryIO, Self
+from typing import Any, BinaryIO
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -20,6 +20,7 @@ from generic_rag.utils.caching import CachingFileStorage
 from generic_rag.utils.llm import LCMessageLogger
 
 FILE_CHUNK_SIZE = 512 * 1024  # 512KB
+EMBEDDINGS_BATCH_SIZE = 250
 OPENAI_API_VERSION = "2023-03-15-preview"
 
 logger = logging.getLogger(__name__)
@@ -226,7 +227,7 @@ class DialClient(ModelProvider):
         self._headers = {"Api-Key": api_key}
         self._in_memory_cache = in_memory_cache
 
-    def bind(self, api_key: str) -> Self:
+    def bind(self, api_key: str) -> "DialClient":
         """Return new instance of the client bound to given API key."""
         return DialClient(
             self._session,
@@ -291,7 +292,7 @@ class DialClient(ModelProvider):
             check_embedding_ctx_length=False,
             model_kwargs={"encoding_format": "float"},
             max_retries=max_retries,
-            chunk_size=512,
+            chunk_size=EMBEDDINGS_BATCH_SIZE,
             timeout=httpx.Timeout(60.0, connect=5.0),
         )
 

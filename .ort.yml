@@ -265,3 +265,6 @@ resolutions:
     - message: ".*PyPI::py-key-value-aio:0\\.4\\.5.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "Apache License 2.0: https://github.com/strawgate/py-key-value/blob/0.4.5/LICENSE"
+    - message: ".*PyPI::json-repair:0\\.61\\.4.*"
+      reason: "CANT_FIX_EXCEPTION"
+      comment: "MIT License: https://github.com/mangiucugna/json_repair/blob/v0.61.4/LICENSE"

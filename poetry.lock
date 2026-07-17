@@ -2727,6 +2727,21 @@ cryptography = ">=45.0.1"
 drafts = ["pycryptodome"]
 
 [[package]]
+name = "json-repair"
+version = "0.61.4"
+description = "A package to repair broken json strings"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "json_repair-0.61.4-py3-none-any.whl", hash = "sha256:1056d5468a6d4e8bb4498b3244f996c795e2d457fbb30465d71249d3ef7b481a"},
+    {file = "json_repair-0.61.4.tar.gz", hash = "sha256:d78c212c1d72606bee30a7886820c9d6f7dbd659883dc2397304735a59f7bf86"},
+]
+
+[package.extras]
+schema = ["jsonschema (>=4.21) ; python_full_version < \"3.15.0a0\" or python_full_version >= \"3.15.0\"", "pydantic (>=2) ; python_full_version < \"3.15.0a0\" or python_full_version >= \"3.15.0\""]
+
+[[package]]
 name = "json-schema-to-pydantic"
 version = "0.4.11"
 description = "A Python library for automatically generating Pydantic v2 models from JSON Schema definitions"
@@ -9631,4 +9646,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "01207e2a40251267b70283dd6d94ae219a1c6119b262561c0a7f197137d5f4df"
+content-hash = "5603bf993fda6b5e4739d8cd7c1241a0ff7e5ae686a64f41a59d8d76a7cf6ffb"
