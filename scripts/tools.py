@@ -20,13 +20,17 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 load_dotenv()
 
-DIAL_URL = os.environ.get("DIAL_URL", "http://localhost:8080")
-DIAL_API_KEY = os.environ.get("DIAL_API_KEY", "dial_api_key")
+DIAL_URL = os.getenv("DIAL_URL", "http://localhost:8080")
+DIAL_API_KEY = os.getenv("DIAL_API_KEY", "dial_api_key")
 
-APPLICATION_TYPE_SCHEMA_ID = "https://dial.epam.com/application_type_schemas/generic-rag"
+APPLICATION_TYPE_SCHEMA_IDS = {
+    "https://dial.epam.com/application_type_schemas/generic-rag",
+    "https://dial.epam.com/application_type_schemas/statgpt-generic-rag",
+}
 
 MAX_CONCURRENCY = 10
 MAX_RETRIES = 3
+MAX_DELAY = 10
 
 APPLICATION_HELP = f"""
 The application can specified either as {click.style("{deployment_name}", fg="cyan")}
@@ -36,7 +40,7 @@ The application can specified either as {click.style("{deployment_name}", fg="cy
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(process)s | %(threadName)s | %(name)s | %(message)s",
-    level=os.environ.get("LOG_LEVEL", logging.INFO),
+    level=os.getenv("LOG_LEVEL", logging.INFO),
     stream=sys.stdout,
 )
 
@@ -56,7 +60,7 @@ async def _validate_application(session: ClientSession, application_id: str):
         response.raise_for_status()
         application_info: dict[str, Any] = await response.json()
 
-    if application_info.get("application_type_schema_id") != APPLICATION_TYPE_SCHEMA_ID:
+    if application_info.get("application_type_schema_id") not in APPLICATION_TYPE_SCHEMA_IDS:
         raise OperationError("the application is not Generic RAG application")
 
 
@@ -255,13 +259,30 @@ async def _reindex_channel(application_id: str, index_names: set[str] | None, fo
         async for document in _list_documents(session, application_id):
             document_id = document.get("id")
             document_name = document.get("display_name")
-            url = f"{application_route}/channel/documents/{document_id}/reindex"
+            status = "unknown"
+            delay = 0.5
 
-            async with session.put(url, params=params) as response:
-                response.raise_for_status()
-                body = await response.json()
-                status: str = body.get("status", "unknown")
-                logger.info(f"[ {status.upper()} ] '{document_name}' (id: {document_id})")
+            try:
+                async with session.put(
+                    f"{application_route}/channel/documents/{document_id}/reindex", params=params
+                ) as response:
+                    response.raise_for_status()
+                    body = await response.json()
+                    status: str = body.get("status", "unknown")
+
+            except ClientResponseError as e:
+                logger.warning(str(e))
+
+            while status not in {"error", "ready"}:
+                await asyncio.sleep(delay)
+                delay = min(MAX_DELAY, delay * 2)
+
+                async with session.get(f"{application_route}/channel/documents/{document_id}") as response:
+                    response.raise_for_status()
+                    body = await response.json()
+                    status: str = body.get("status", "unknown")
+
+            logger.info(f"[ {status.upper()} ] '{document_name}' (id: {document_id})")
 
 
 @click.group()

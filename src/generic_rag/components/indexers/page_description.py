@@ -1,7 +1,8 @@
 import asyncio
 import io
+import itertools
 import logging
-import time
+from asyncio import Semaphore, TaskGroup
 from collections.abc import Collection, Iterable
 from functools import cached_property
 from typing import Any, Literal, Self
@@ -13,7 +14,7 @@ from langchain_community.callbacks import OpenAICallbackHandler
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from generic_rag.types import (
     AnyChunk,
@@ -61,6 +62,9 @@ Provide answer in JSON format with fields:
 
 PAGE_DESCRIPTION_DEFAULT_LLM_DEPLOYMENT = "gpt-4.1-mini-2025-04-14"
 PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 800
+
+# Error message in the openai library tells to use math.inf, but the type for the max_retries is int
+MAX_RETRIES = 1_000_000_000  # One billion retries should be enough
 
 
 class ImageDescription(BaseModel):
@@ -113,7 +117,7 @@ class PageDescription(BaseModel):
                 table_key_fact = table_json["table"]["key_fact"]
             else:
                 table_description = table_json["description"]
-                table_key_fact = table_json["keyfact"]
+                table_key_fact = table_json["key_fact"]
 
             if "no tables are present" in table_description.lower():
                 continue
@@ -135,7 +139,8 @@ class PageDescription(BaseModel):
         result: list[str] = []
 
         def _add_to_result(chunk: str):
-            result.append(chunk.replace("\n", " ").replace("\r", " "))
+            if chunk := chunk.replace("\n", " ").replace("\r", " ").strip():
+                result.append(chunk)
 
         _add_to_result(self.page_summary)
         _add_to_result(self.key_fact)
@@ -171,6 +176,7 @@ class PageDescriptionConfig(BaseModel):
     llm: LlmConfig = Field(
         default=LlmConfig(
             deployment_name=PAGE_DESCRIPTION_DEFAULT_LLM_DEPLOYMENT,
+            max_retries=MAX_RETRIES,
         ),
         description=(
             "Configuration for the LLM used in the description index. "
@@ -189,6 +195,18 @@ class PageDescriptionConfig(BaseModel):
             "If the image chunk is bigger, it will be resized to fit that value."
         ),
     )
+    max_concurrency: int = Field(
+        default=2,
+        description="Maximum number of concurrent requests sent to LLM",
+    )
+
+    @field_validator("llm", mode="before")
+    @classmethod
+    def merge_llm_defaults(cls, data: Any):
+        if isinstance(data, dict):
+            default_value = cls.model_fields["llm"].default.model_dump()
+            return default_value | data
+        return data
 
 
 class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
@@ -211,39 +229,47 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
     async def index_data(
         self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
     ) -> Collection[IndexRecord[VectorType]]:
+        semaphore = Semaphore(self.config.max_concurrency)
+
+        async def _get_page_description(chunk: ImageChunk, meta: IndexedEntityMeta):
+            async with semaphore:
+                page_description = await self._get_page_description(chunk)
+                return list(zip(page_description.texts, [meta] * len(page_description.texts), strict=True))
+
+        async with TaskGroup() as task_group:
+            tasks = [
+                task_group.create_task(_get_page_description(chunk, meta))
+                for chunk, meta in data
+                if isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page
+            ]
+
         texts: list[str] = []
         record_metas: list[IndexedEntityMeta] = []
 
-        for chunk, meta in data:
-            if isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page:
-                page_description = await self._get_page_description(chunk)
-                texts.extend(page_description.texts)
-                record_metas.extend([meta] * len(page_description.texts))
+        for description, record_meta in itertools.chain(*[task.result() for task in tasks]):
+            texts.append(description)
+            record_metas.append(record_meta)
 
         embeddings = await self._embeddings.aembed_documents(texts)
+
         return [
             IndexRecord(index=index, metadata=meta)
             for index, meta in zip(embeddings, record_metas, strict=True)
         ]
 
+    @log_execution_time(logger)
     async def _get_page_description(self, chunk: ImageChunk) -> PageDescription:
         assert chunk.image_type == ImageType.page
 
         prompt = await asyncio.to_thread(self._build_prompt, chunk)
-
         cb = OpenAICallbackHandler()
-        start_time = time.perf_counter()
 
         response = await self._llm.ainvoke(
             input=[HumanMessage(prompt)],
             config=RunnableConfig(callbacks=[cb]),
         )
 
-        end_time = time.perf_counter()
-
-        logger.debug(f"LLM Time ({self._llm}): {end_time - start_time:.2f}s")
-        logger.debug(f"LLM Response: {response.content}")
-        logger.debug(f"{cb.total_tokens=} ({cb.prompt_tokens=}, {cb.completion_tokens=})")
+        logger.info(f"{cb.total_tokens=} ({cb.prompt_tokens=}, {cb.completion_tokens=})")
 
         return PageDescription.create(self._get_fixed_json(response.content))
 
@@ -259,7 +285,6 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
                 target_width = round(image.width * (self.config.max_image_size / image.height))
                 target_height = self.config.max_image_size
 
-            logger.info(f"{target_width=}, {target_height=}")
             image.resize(size=(target_width, target_height))
 
             with io.BytesIO() as fp:
