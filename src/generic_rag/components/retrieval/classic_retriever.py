@@ -65,15 +65,17 @@ class ClassicIndexResultsPostprocessor(BaseRetriever):
         self, retrieved_docs: list[LangchainDocument]
     ) -> AsyncGenerator[LangchainDocument]:
         text_chunks_by_page = await self._collect_text_chunks_of_page_images(retrieved_docs)
+        seen_pages: set[tuple[int, int]] = set()
 
         for doc in retrieved_docs:
             original_chunk: AnyChunk = doc.metadata["chunks"][0]
             page_key = (original_chunk.document_id, original_chunk.page_number)
 
             if original_chunk.chunk_type == ChunkType.image and page_key in text_chunks_by_page:
-                # instead of returning original image chunk with page image we return
-                # text chunks from the page where this image chunk is originated
-                for chunk in text_chunks_by_page.get(page_key, []):
+                # a page found by image search takes a single slot
+                if page_key not in seen_pages:
+                    seen_pages.add(page_key)
+                    chunk = text_chunks_by_page[page_key][0]
                     yield LangchainDocument(
                         page_content=doc.page_content,
                         metadata={
