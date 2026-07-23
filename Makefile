@@ -1,7 +1,10 @@
+# Any non-empty CI value (even 'false' or '0') means that CI is enabled
+CI ?=
+
 .PHONY: init_venv remove_venv install download_spacy install_all lint format test up run main down cleanup
 
 init_venv:
-	poetry env use python3.13
+	$(if $(CI),,poetry env use python3.13)
 
 remove_venv:
 	poetry env remove --all
