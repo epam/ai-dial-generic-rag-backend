@@ -29,10 +29,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncScalarResult, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.ddl import DDL, CreateIndex, CreateTable
 from sqlalchemy.sql.schema import SchemaItem
+from sqlalchemy.util import OrderedSet
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from generic_rag.types import (
@@ -258,19 +259,34 @@ class VectorIndexStorage(TableIndexStorage[VectorType]):
             return []
 
         table = await self._get_table()
+        result: OrderedSet[IndexedEntityMeta] = OrderedSet()
+        offset = 0
 
         async with self._session_factory() as session:
-            result = await session.scalars(
-                select(table.c.metadata)
-                .where(
-                    self._get_documents_filtering_clause(table, *documents)
-                    if documents is not None
-                    else true()
-                )
-                .order_by(table.c.index.cosine_distance(query))
-                .limit(bindparam("limit", limit))
+            where_clause = (
+                [self._get_documents_filtering_clause(table, *documents)] if documents is not None else []
             )
-            return [IndexedEntityMeta.model_validate(raw_meta) for raw_meta in result]
+            while len(result) < limit:
+                scalar_result: AsyncScalarResult = await session.scalars(
+                    select(table.c.metadata)
+                    .where(*where_clause)
+                    .order_by(table.c.index.cosine_distance(query))
+                    .offset(bindparam("offset", offset))
+                    .limit(bindparam("limit", limit * 2))
+                )
+
+                if not (rows := scalar_result.all()):
+                    break
+
+                for row in rows:
+                    if (meta := IndexedEntityMeta.model_validate(row)) not in result:
+                        result.add(meta)
+                    if len(result) >= limit:
+                        break
+
+                offset += len(rows)
+
+        return result
 
 
 class TextIndexStorageOptions(BaseModel, ABC):
