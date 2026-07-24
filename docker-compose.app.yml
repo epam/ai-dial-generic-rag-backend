@@ -18,3 +18,9 @@ services:
       - DIAL_URL=http://core:8080
       - DB_HOST=vectordb
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+    # the application usually gets deployed to k8s with dial-extension helm chart
+    # which has `readOnlyRootFilesystem` enabled by default and mounts /tmp as emptyDir,
+    # so making similar settings here in order to catch possible errors related to it
+    read_only: true
+    tmpfs:
+      - /tmp

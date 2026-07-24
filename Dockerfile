@@ -49,6 +49,8 @@ RUN python -m spacy download en_core_web_sm && \
 
 COPY --chown=appuser ./src ./
 
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+
 # disable usage tracking for unstructured
 ENV DO_NOT_TRACK=true
 
