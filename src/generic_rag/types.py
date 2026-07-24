@@ -351,6 +351,7 @@ class IndexedEntityMeta(BaseModel):
 
     model_config = ConfigDict(
         extra="allow",
+        frozen=True,
     )
 
 
