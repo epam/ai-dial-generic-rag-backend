@@ -285,7 +285,7 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
                 target_width = round(image.width * (self.config.max_image_size / image.height))
                 target_height = self.config.max_image_size
 
-            image.resize(size=(target_width, target_height))
+            image = image.resize(size=(target_width, target_height))
 
             with io.BytesIO() as fp:
                 image.save(fp, format="png")
