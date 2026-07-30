@@ -1,3 +1,4 @@
+import asyncio
 import http
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -6,21 +7,23 @@ import fastapi
 from aidial_sdk import DIALApp
 from aidial_sdk.telemetry.types import MetricsConfig, TelemetryConfig, TracingConfig
 from aidial_sdk.utils.json import remove_nones
-from fastapi import Request
-from injection import find_instance, set_constant
+from fastapi import FastAPI, Request
+from injection import afind_instance, find_instance, set_constant
 from injection.loaders import load_packages
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.responses import JSONResponse
 
-import generic_rag.app.module
+import generic_rag.app.dependencies
 import generic_rag.components
 import generic_rag.services
 from generic_rag.app import APP_NAME
 from generic_rag.app.chat_completion import ChannelCompletion
 from generic_rag.app.embeddings import EmbeddingsEndpoint
+from generic_rag.app.jobs import setup_jobs
 from generic_rag.app.mcp import setup_mcp
 from generic_rag.app.routes import setup_routes
 from generic_rag.app.settings import ApplicationSettings, get_app_settings
-from generic_rag.db.connection import get_engine
+from generic_rag.db import apply_migrations
 from generic_rag.db.session import DbSessionMaker
 
 logger = logging.getLogger(__name__)
@@ -53,18 +56,19 @@ async def lifespan(app: DIALApp):
         generic_rag.services,
     )
 
-    # noinspection PyAbstractClass
     async with AsyncExitStack() as exit_stack:
         set_constant(exit_stack)
+        set_constant(app, on=FastAPI)
 
-        engine = await get_engine(settings.database, exit_stack)
-        DbSessionMaker.configure(bind=engine)
+        DbSessionMaker.configure(bind=await afind_instance(AsyncEngine))
 
+        await asyncio.to_thread(apply_migrations, settings.database)
         await setup_routes(app)
 
         app.add_chat_completion(APP_NAME, ChannelCompletion())
         app.add_embeddings(f"{APP_NAME}-embeddings", EmbeddingsEndpoint())
 
+        await setup_jobs()
         await setup_mcp(app, exit_stack)
 
         yield

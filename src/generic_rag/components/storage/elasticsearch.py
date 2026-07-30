@@ -197,7 +197,7 @@ class ElasticsearchIndexStorageBackend[StorageOptionsT: ElasticsearchIndexStorag
 ):
     """Storage backend that stores indexes in Elasticsearch."""
 
-    def __init__(self, client: AsyncElasticsearch, index_prefix: str):
+    def __init__(self, client: AsyncElasticsearch, index_prefix: str | None):
         self._client = client
         self._index_prefix = (index_prefix or "").rstrip("-")
 

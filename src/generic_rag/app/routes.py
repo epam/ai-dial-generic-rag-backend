@@ -16,6 +16,7 @@ from fastapi import (
     Path,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.exceptions import RequestValidationError
@@ -26,21 +27,23 @@ from injection.ext.fastapi import Inject
 from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model
 from starlette.responses import StreamingResponse
 from starlette.status import (
+    HTTP_200_OK,
     HTTP_201_CREATED,
+    HTTP_202_ACCEPTED,
     HTTP_204_NO_CONTENT,
     HTTP_404_NOT_FOUND,
 )
 from starlette.templating import Jinja2Templates
-from taskiq import AsyncBroker, AsyncTaskiqTask
 
 from generic_rag.app import APP_NAME, APP_VERSION
+from generic_rag.app.jobs import run_index_document_job
 from generic_rag.app.settings import ApplicationSettings
-from generic_rag.app.tasks import TaskName
 from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
 from generic_rag.scope import ChannelBindings
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.export_service import ExportService
+from generic_rag.services.indexing_service import IndexingService
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.services.retrieval_service import RetrievalRequest, RetrievalResult, RetrievalService
 from generic_rag.types import Document
@@ -110,7 +113,7 @@ async def upload_document(
         ),
     ] = None,
     document_service: Inject[DocumentService] = NotImplemented,
-    broker: Inject[AsyncBroker] = NotImplemented,
+    indexing_service: Inject[IndexingService] = NotImplemented,
 ) -> Document:
     """
     Upload document into the channel.
@@ -119,14 +122,12 @@ async def upload_document(
     """
     document = await document_service.upload_document(folder, attachment, metadata)
 
-    task: AsyncTaskiqTask = await broker.find_task(TaskName.index_document).kiq(
-        document_id=document.id,
-    )
+    if await run_index_document_job(document.id):
+        return document
 
-    if await task.is_ready():
-        return await document_service.get_document(document.id)
+    await indexing_service.index_document(document)
 
-    return document
+    return await document_service.get_document(document.id)
 
 
 @_channel.post("/documents/import", tags=["documents"], status_code=HTTP_201_CREATED)
@@ -222,8 +223,16 @@ async def set_document_metadata(
     return await document_service.set_document_metadata(document_id, body)
 
 
-@_channel.put("/documents/{id}/reindex", tags=["documents"])
-async def reindex_document(
+@_channel.put(
+    "/documents/{id}/reindex",
+    tags=["documents"],
+    responses={
+        HTTP_200_OK: {"model": Document, "description": "Document successfully indexed."},
+        HTTP_202_ACCEPTED: {"model": Document, "description": "Document will be indexed in background."},
+    },
+)
+async def reindex_document(  # noqa: PLR0913
+    response: Response,
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
     index_names: Annotated[
         set[str],
@@ -243,22 +252,19 @@ async def reindex_document(
             )
         ),
     ] = False,
+    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
     document_service: Inject[DocumentService] = NotImplemented,
-    broker: Inject[AsyncBroker] = NotImplemented,
-) -> Document:
+    indexing_service: Inject[IndexingService] = NotImplemented,
+):
     """Reindex the document with given id."""
     document = await document_service.get_document(document_id)
 
-    task: AsyncTaskiqTask = await broker.find_task(TaskName.index_document).kiq(
-        document_id=document.id,
-        index_names=index_names or None,
-        force=force,
-    )
+    if async_ and await run_index_document_job(document_id, index_names or None, force):
+        response.status_code = HTTP_202_ACCEPTED
+        return document
 
-    if await task.is_ready():
-        return await document_service.get_document(document_id)
-
-    return document
+    await indexing_service.index_document(document, index_names=index_names or None, force=force)
+    return await document_service.get_document(document.id)
 
 
 class MetadataSchemaResponse(BaseModel):
@@ -295,7 +301,7 @@ class ChannelConfigMixin(BaseModel):
 
 
 @inject
-async def _get_channel_router(channel_service: ChannelService) -> APIRouter:
+async def _get_channel_router(channel_service: ChannelService = NotImplemented) -> APIRouter:
     router = APIRouter(prefix="/channel", dependencies=[Depends(_setup_channel_scope)])
     channel_config_model = await channel_service.get_channel_config_model()
 
@@ -318,7 +324,7 @@ async def _get_channel_router(channel_service: ChannelService) -> APIRouter:
 
 @inject
 def _get_channel_openapi(router: APIRouter, settings: ApplicationSettings):
-    with open(os.path.join(os.path.dirname(__file__), "channel.md")) as fp:
+    with open(os.path.join(str(os.path.dirname(__file__)), "channel.md")) as fp:
         description = fp.read()
 
     server_url = settings.dial_public_url or settings.dial_url

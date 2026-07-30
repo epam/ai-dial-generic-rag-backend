@@ -13,7 +13,8 @@
     </a>
 </h4>
 
-**Generic RAG** is a DIAL application that answers user questions based on data from collection of preloaded and pre-indexed documents.
+**Generic RAG** is Application Runner that allows building DIAL applications that answers user questions
+based on data from collection of preloaded and pre-indexed documents, with flexible configuration of the processing pipeline.
 
 <!-- TOC -->
 * [Quick Start](#quick-start)
@@ -82,6 +83,7 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 |Variable|Required|Description|Available Values|Default Values|
 |---|---|---|---|---|
 | `DIAL_URL` | Yes | URL to the DIAL core. |  |  |
+| `DIAL_API_KEY` | No | Optional api-key for background jobs execution. |  |
 | `DIAL_PUBLIC_URL` | No | URL where DIAL core is publicly accessible (used to generate interactive documentation). |  |  |
 | `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`/`true`/`1`, `no`/`false`/`0` | `yes` |
 | `IN_MEMORY_CACHE_CAPACITY` | No | In-memoty cache capacity (examples: `128MiB`, `1GiB`, `2.5GiB`) |  | `128MiB` |
@@ -104,6 +106,9 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 >   other variables with `ELASTICSEARCH_` prefix will be ignored.
 > * if you use single instance of Elasticsearch for multiple generic-rag deployments, setting
 >   `ELASTICSEARCH_INDEX_PREFIX` is mandatory, and it should be unique for every single deployment of generic-rag.
+> * setting `DIAL_API_KEY` allows to enable limited support of background jobs execution (such as indexing);
+>   if set, indexing will be performed via background jobs on behalf of this api-key for only applications
+>   which are accessible using this api-key, other applications will not be affected
 
 ## DIAL Core Configuration
 
