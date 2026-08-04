@@ -131,114 +131,6 @@
       "type": "embedding",
       "endpoint": "${GENERIC_RAG_URL}/openai/deployments/generic-rag-embeddings/embeddings"
     },
-    "gpt-4-turbo": {
-      "type": "chat",
-      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4-turbo/chat/completions",
-      "upstreams": [
-        {
-          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4-turbo/chat/completions",
-          "key": "${REMOTE_DIAL_API_KEY}"
-        }
-      ],
-      "inputAttachmentTypes": [
-        "*/*"
-      ],
-      "displayName": "OpenAI GPT-4 Turbo (Legacy)",
-      "displayVersion": "Latest",
-      "description": "GPT-4 Turbo is an advanced version of the GPT-4 language model developed by OpenAI.\n\nIt was released as a major refinement of the existing model, with improvements in efficiency and speed [1]. GPT-4 Turbo introduced several new features, including faster responses, support for longer inputs up to 128K tokens in length, and improved knowledge of recent events [2]. It also has a larger context window compared to its predecessor, which allows it to analyze and remember more information",
-      "descriptionKeywords": [
-        "Text Generation"
-      ],
-      "iconUrl": "gpt4.svg"
-    },
-    "gpt-4-turbo-2024-04-09": {
-      "type": "chat",
-      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4-turbo-2024-04-09/chat/completions",
-      "upstreams": [
-        {
-          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4-turbo-2024-04-09/chat/completions",
-          "key": "${REMOTE_DIAL_API_KEY}"
-        }
-      ],
-      "inputAttachmentTypes": [
-        "*/*"
-      ],
-      "displayName": "OpenAI GPT-4 Turbo (Legacy)",
-      "displayVersion": "2024-04-09",
-      "description": "GPT-4 Turbo is an advanced version of the GPT-4 language model developed by OpenAI.\n\nIt was released as a major refinement of the existing model, with improvements in efficiency and speed [1]. GPT-4 Turbo introduced several new features, including faster responses, support for longer inputs up to 128K tokens in length, and improved knowledge of recent events [2]. It also has a larger context window compared to its predecessor, which allows it to analyze and remember more information",
-      "descriptionKeywords": [
-        "Text Generation"
-      ],
-      "iconUrl": "gpt4.svg"
-    },
-    "gpt-4o-2024-05-13": {
-      "type": "chat",
-      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-2024-05-13/chat/completions",
-      "upstreams": [
-        {
-          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-2024-05-13/chat/completions",
-          "key": "${REMOTE_DIAL_API_KEY}"
-        }
-      ],
-      "inputAttachmentTypes": [
-        "*/*"
-      ],
-      "displayName": "OpenAI GPT-4o (Omni)",
-      "displayVersion": "2024-05-13",
-      "description": "GPT-4o is a multimodal generative pre-trained transformer developed by OpenAI and released in May 2024.\n\nIt is OpenAI new flagship model that integrates text, vision, and audio capabilities, setting a new standard for generative and conversational AI experiences. It is engineered for speed and efficiency, with an advanced ability to handle complex queries with minimal resources.",
-      "descriptionKeywords": [
-        "Text Generation",
-        "Image Recognition",
-        "Functions"
-      ],
-      "iconUrl": "gpt4.svg"
-    },
-    "gpt-4o-2024-08-06": {
-      "type": "chat",
-      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-2024-08-06/chat/completions",
-      "upstreams": [
-        {
-          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-2024-08-06/chat/completions",
-          "key": "${REMOTE_DIAL_API_KEY}"
-        }
-      ],
-      "inputAttachmentTypes": [
-        "*/*"
-      ],
-      "displayName": "OpenAI GPT-4o (Omni)",
-      "displayVersion": "2024-08-06",
-      "description": "GPT-4o is a multimodal generative pre-trained transformer developed by OpenAI and released in May 2024.\n\nIt is OpenAI new flagship model that integrates text, vision, and audio capabilities, setting a new standard for generative and conversational AI experiences. It is engineered for speed and efficiency, with an advanced ability to handle complex queries with minimal resources.",
-      "descriptionKeywords": [
-        "Text Generation",
-        "Image Recognition",
-        "Functions",
-        "Structured Output"
-      ],
-      "iconUrl": "gpt4.svg"
-    },
-    "gpt-4o-mini-2024-07-18": {
-      "type": "chat",
-      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4o-mini-2024-07-18/chat/completions",
-      "upstreams": [
-        {
-          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4o-mini-2024-07-18/chat/completions",
-          "key": "${REMOTE_DIAL_API_KEY}"
-        }
-      ],
-      "inputAttachmentTypes": [
-        "*/*"
-      ],
-      "displayName": "OpenAI GPT-4o mini",
-      "displayVersion": "2024-07-18",
-      "description": "The GPT-4o mini model is a smaller, faster, and cheaper version of the GPT-4o AI model developed by OpenAI.\n\nIt is designed to replace the GPT-3.5 Turbo model, which was the default for free ChatGPT users and the cheapest option for developers building applications on OpenAI technology",
-      "descriptionKeywords": [
-        "Text Generation",
-        "Image Recognition",
-        "Functions",
-        "Structured Output"
-      ],
-      "iconUrl": "gpt4.svg"
-    },
     "gpt-4.1-2025-04-14": {
       "type": "chat",
       "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4.1-2025-04-14/chat/completions",
@@ -308,6 +200,229 @@
       ],
       "iconUrl": "gpt4.svg"
     },
+    "gpt-5-2025-08-07": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5-2025-08-07/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5-2025-08-07/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5",
+      "displayVersion": "2025-08-07",
+      "description": "GPT-5, a full reasoning model provides deep, richer reasoning for analytics and complex tasks, like code generation, with a 272k token context.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Continue Supported",
+        "Image Recognition"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5-mini-2025-08-07": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5-mini-2025-08-07/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5-mini-2025-08-07/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5 mini",
+      "displayVersion": "2025-08-07",
+      "description": "GPT-5 mini - powers real-time experiences for apps and agents that require reasoning, tool calling to solve customer problems.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Continue Supported",
+        "Image Recognition"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5-nano-2025-08-07": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5-nano-2025-08-07/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5-nano-2025-08-07/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5 nano",
+      "displayVersion": "2025-08-07",
+      "description": "GPT-5 nano is a new class of reasoning model which focuses on ultra-low-latency and speed with rich Q&A capabilities.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Continue Supported",
+        "Image Recognition"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.4-2026-03-05": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.4-2026-03-05/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.4-2026-03-05/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.4",
+      "displayVersion": "2026-03-05",
+      "description": "GPT-5.4 is designed for advanced reasoning, large-scale document analysis, and complex professional workflows that require high accuracy and long context understanding. It excels at synthesizing information, generating structured reports, and assisting with coding, data analysis, and operational automation. Built for enterprise and agent-based scenarios, GPT-5.4 supports large context windows, reliable tool integration, and structured outputs, making it well suited for long-running analytical tasks and business-critical automation.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Continue Supported",
+        "Image Recognition",
+        "OCR Extraction"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.4-mini-2026-03-17": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.4-mini-2026-03-17/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.4-mini-2026-03-17/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.4 Mini",
+      "displayVersion": "2026-03-17",
+      "description": "GPT‑5.4‑mini is a compact, cost‑efficient model designed for reliable performance across high‑volume, everyday AI workloads.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Azure",
+        "Reasoning",
+        "Image Recognition",
+        "Functions",
+        "PDF Supported"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.4-nano-2026-03-17": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.4-nano-2026-03-17/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.4-nano-2026-03-17/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.4 Nano",
+      "displayVersion": "2026-03-17",
+      "description": "GPT‑5.4‑nano is a lightweight, ultra‑efficient model designed for low‑latency, cost‑effective tasks at massive scale.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Azure",
+        "Reasoning",
+        "Image Recognition",
+        "Functions",
+        "PDF Supported"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.6-sol-2026-07-09": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.6-sol-2026-07-09/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.6-sol-2026-07-09/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.6 Sol",
+      "displayVersion": "2026-07-09",
+      "description": "gpt‑5.6‑sol is the flagship reasoning model in the GPT‑5.6 family, designed for the most complex, compute-intensive workloads. It combines deep reasoning, multi-agent orchestration, advanced coding capabilities, and a 1M-token context window to solve sophisticated problems across analysis, software engineering, research, and agentic workflows.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Azure",
+        "Reasoning",
+        "Image Recognition",
+        "Functions",
+        "PDF Supported"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.6-terra-2026-07-09": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.6-terra-2026-07-09/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.6-terra-2026-07-09/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.6 Terra",
+      "displayVersion": "2026-07-09",
+      "description": "gpt‑5.6‑terra is a balanced reasoning model in the GPT‑5.6 family, that delivers strong reasoning and tool-use capabilities with lower cost and high scalability. Designed for everyday enterprise workloads, Terra provides an optimal balance of performance, efficiency, and cost while supporting up to a 1M‑token context window for large-scale business applications.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Azure",
+        "Reasoning",
+        "Image Recognition",
+        "Functions",
+        "PDF Supported"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
+    "gpt-5.6-luna-2026-07-09": {
+      "type": "chat",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.6-luna-2026-07-09/chat/completions",
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.6-luna-2026-07-09/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ],
+      "inputAttachmentTypes": [
+        "image/*",
+        "application/pdf"
+      ],
+      "displayName": "GPT-5.6 Luna",
+      "displayVersion": "2026-07-09",
+      "description": "gpt-5.6-luna is a fast, cost-efficient model with up to a 1M-token context window, optimized for low-latency inference, multilingual workloads, and large-context applications at scale.",
+      "descriptionKeywords": [
+        "Text Generation",
+        "Azure",
+        "Reasoning",
+        "Image Recognition",
+        "Functions",
+        "PDF Supported"
+      ],
+      "iconUrl": "gpt3.svg"
+    },
     "text-embedding-ada-002": {
       "type": "embedding",
       "endpoint": "http://adapter-dial:5000/openai/deployments/text-embedding-ada-002/embeddings",
@@ -370,14 +485,18 @@
       "limits": {
         "generic-rag-example": {},
         "generic-rag-embeddings": {},
-        "gpt-4-turbo": {},
-        "gpt-4-turbo-2024-04-09": {},
-        "gpt-4o-2024-05-13": {},
-        "gpt-4o-2024-08-06": {},
-        "gpt-4o-mini-2024-07-18": {},
         "gpt-4.1-2025-04-14": {},
         "gpt-4.1-mini-2025-04-14": {},
         "gpt-4.1-nano-2025-04-14": {},
+        "gpt-5-2025-08-07": {},
+        "gpt-5-mini-2025-08-07": {},
+        "gpt-5-nano-2025-08-07": {},
+        "gpt-5.4-2026-03-05": {},
+        "gpt-5.4-mini-2026-03-17": {},
+        "gpt-5.4-nano-2026-03-17": {},
+        "gpt-5.6-sol-2026-07-09": {},
+        "gpt-5.6-terra-2026-07-09": {},
+        "gpt-5.6-luna-2026-07-09": {},
         "text-embedding-ada-002": {},
         "text-embedding-3-small": {},
         "text-embedding-3-large": {},
