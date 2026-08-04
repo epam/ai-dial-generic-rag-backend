@@ -71,7 +71,7 @@ class ChunkSourcesManager:
         ):
             return
 
-        for document in await self._document_service.get_documents(missing_sources):
+        for document in await self._document_service.get_document_list(missing_sources):
             source_url = await self._file_storage.copy_file_to_user(
                 document.url,
                 document.display_name,

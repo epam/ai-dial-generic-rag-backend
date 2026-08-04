@@ -1,8 +1,7 @@
 import io
-import json
 import os
 from collections.abc import AsyncGenerator, Sequence
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import urljoin
 
 from async_lru import alru_cache
@@ -30,7 +29,6 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_404_NOT_FOUND,
-    HTTP_422_UNPROCESSABLE_CONTENT,
 )
 from starlette.templating import Jinja2Templates
 from taskiq import AsyncBroker, AsyncTaskiqTask
@@ -117,19 +115,8 @@ async def upload_document(
     """
     Upload document into the channel.
 
-    The value of `metadata` should be a valid json and should match the json-schema associated with this channel.
+    The value of `metadata` should be a valid JSON and should match the json-schema associated with this channel.
     """
-    if metadata:
-        try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"{metadata}: invalid json: {str(e)}",
-            ) from e
-    else:
-        metadata = None
-
     document = await document_service.upload_document(folder, attachment, metadata)
 
     task: AsyncTaskiqTask = await broker.find_task(TaskName.index_document).kiq(
@@ -220,6 +207,19 @@ async def export_document_data(
             "Access-Control-Expose-Headers": "content-disposition",
         },
     )
+
+
+@_channel.put("/documents/{id}/metadata", tags=["documents"])
+async def set_document_metadata(
+    document_id: Annotated[int, Path(alias="id", description="id of the document")],
+    body: Annotated[dict[str, Any], Field(description="the metadata to set")],
+    document_service: Inject[DocumentService],
+) -> Document:
+    """
+    Set the metadata for the document.
+    Metadata object should match the JSON schema configured for the channel.
+    """
+    return await document_service.set_document_metadata(document_id, body)
 
 
 @_channel.put("/documents/{id}/reindex", tags=["documents"])
