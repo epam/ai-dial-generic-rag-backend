@@ -1,9 +1,10 @@
 import asyncio
 import hashlib
+import json
 import logging
 import os
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sequence
-from typing import Self
+from typing import Any, Self
 from urllib.parse import unquote
 
 import jsonschema
@@ -173,7 +174,9 @@ class DocumentService:
         total_count = await self._repository.get_total_count(matcher)
         return PaginatedResults.create(results, pagination, total_count)
 
-    async def upload_document(self, folder: str, attachment: UploadFile, metadata: dict | None) -> Document:
+    async def upload_document(
+        self, folder: str, attachment: UploadFile, metadata: str | dict | None
+    ) -> Document:
         """
         Upload document to a channel.
 
@@ -181,8 +184,21 @@ class DocumentService:
         :param attachment: the document to upload
         :param metadata: metadata to assign with document (should match json schema associated with this channel)
         """
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=f"{metadata}: invalid json: {str(e)}",
+                ) from e
+
         self._validate_attachment(attachment)
         self._validate_metadata(metadata)
+
+        assert attachment.size is not None
+        assert attachment.content_type is not None
+        assert attachment.filename is not None
 
         url = await self._upload_attachment(folder, attachment)
         display_name = unquote(os.path.join(folder, attachment.filename))
@@ -257,6 +273,9 @@ class DocumentService:
             ) from e
 
     async def _upload_attachment(self, folder: str, attachment: UploadFile) -> str:
+        assert attachment.filename is not None
+        assert attachment.content_type is not None
+
         bucket = await self._file_storage.get_bucket()
         basename, ext = os.path.splitext(attachment.filename)
         filename = hashlib.sha1(basename.lower().encode()).hexdigest() + ext
@@ -284,7 +303,7 @@ class DocumentService:
         )
 
     @transaction
-    async def get_documents(self, document_ids: Iterable[int]) -> list[Document]:
+    async def get_document_list(self, document_ids: Iterable[int]) -> list[Document]:
         """
         Return documents with given IDs.
 
@@ -304,6 +323,27 @@ class DocumentService:
         :param status: target status
         """
         await self._repository.set_status(document_id, status)
+
+    @transaction
+    async def set_document_metadata(self, document_id: int, metadata: dict[str, Any]) -> Document:
+        """
+        Set metadata for given document.
+
+        :param document_id: id of target document
+        :param metadata: metadata dictionary to set
+        :return: the updated document
+        """
+        self._validate_metadata(metadata)
+
+        if document := await self._repository.get_by_id(document_id):
+            document.metadata_ = metadata
+            document = await self._repository.save(document)
+            return _Document.from_entity(document, self._file_storage)
+
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Document '{document_id}' not found.",
+        )
 
     @transaction
     async def delete_document(self, document_id: int) -> None:
