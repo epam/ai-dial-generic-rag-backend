@@ -104,9 +104,9 @@ resolutions:
     - message: ".*PyPI::pyjwt:2\\.13\\.0.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "MIT License: https://github.com/jpadilla/pyjwt/blob/2.13.0/LICENSE"
-    - message: ".*PyPI::cryptography:49\\.0\\.0.*"
+    - message: ".*PyPI::cryptography:50\\.0\\.0.*"
       reason: "CANT_FIX_EXCEPTION"
-      comment: "Dual (Apache 2.0 OR BSD 3-Clause): https://github.com/pyca/cryptography/blob/49.0.0/LICENSE"
+      comment: "Dual (Apache 2.0 OR BSD 3-Clause): https://github.com/pyca/cryptography/blob/50.0.0/LICENSE"
 
     - message: ".*PyPI::opentelemetry-proto:1\\.43\\.0.*"
       reason: "CANT_FIX_EXCEPTION"
