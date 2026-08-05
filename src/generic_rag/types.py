@@ -132,7 +132,7 @@ class Document(BaseModel, ABC):
     size: int = Field(..., description="size of the original document (in bytes)")
     metadata: dict = Field(
         default_factory=dict,
-        description="optional metadata associated with this document (should match the schema associated with the channel",
+        description="optional metadata associated with this document (should match the schema associated with the channel)",
     )
     status: DocumentStatus = Field(..., description="the status of this document processing")
 

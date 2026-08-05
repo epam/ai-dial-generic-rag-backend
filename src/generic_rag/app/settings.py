@@ -4,13 +4,13 @@ import re
 import sys
 from typing import Self
 
-import sqlalchemy
 from pydantic import (
     BaseModel,
     ByteSize,
     Field,
     HttpUrl,
     SecretStr,
+    TypeAdapter,
     ValidationError,
     field_validator,
     model_validator,
@@ -35,20 +35,10 @@ class DatabaseConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def check_db_auth(self) -> Self:
+    def validate_auth(self) -> Self:
         if not (self.password or self.msi_enabled):
             raise ValueError("either 'password' or 'msi_enabled' should be set")
         return self
-
-    def get_url(self):
-        return sqlalchemy.engine.URL.create(
-            drivername="postgresql+asyncpg",
-            host=self.host,
-            port=self.port,
-            database=self.dbname,
-            username=self.username,
-            password=self.password.get_secret_value() if not self.msi_enabled else None,
-        )
 
 
 class ElasticsearchSettings(BaseModel):
@@ -94,8 +84,7 @@ class InMemoryCacheSettings(BaseModel):
 
     enabled: bool = True
     capacity: ByteSize = Field(
-        default="128MiB",
-        validate_default=True,
+        default=TypeAdapter(ByteSize).validate_python("128MiB"),
         description=(
             "Used to cache the file contents and avoid requesting Dial Core File API every time, "
             "if user makes several requests for the same document. Could be increased to reduce load "
@@ -110,6 +99,7 @@ class ApplicationSettings(BaseModel):
     """Main application settings class."""
 
     dial_url: HttpUrl = Field(description="URL to the DIAL core.")
+    dial_api_key: SecretStr | None = Field(description="optional api-key for background jobs execution")
     dial_public_url: HttpUrl | None = Field(
         None,
         description="URL where DIAL core is publicly accessible (used to generate interactive documentation).",
@@ -122,6 +112,7 @@ class ApplicationSettings(BaseModel):
 def get_app_settings() -> ApplicationSettings:
     raw_config = {
         "dial_url": os.environ.get("DIAL_URL"),
+        "dial_api_key": os.environ.get("DIAL_API_KEY"),
         "dial_public_url": os.environ.get("DIAL_PUBLIC_URL"),
         "in_memory_cache": {
             "enabled": os.environ.get("IN_MEMORY_CACHE_ENABLED", "yes"),

@@ -1168,6 +1168,21 @@ test = ["Pillow", "contourpy[test-no-images]", "matplotlib"]
 test-no-images = ["pytest", "pytest-cov", "pytest-rerunfailures", "pytest-xdist", "wurlitzer"]
 
 [[package]]
+name = "croniter"
+version = "6.2.4"
+description = "croniter provides iteration for datetime object with cron like format"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "croniter-6.2.4-py3-none-any.whl", hash = "sha256:8ef3d544107a5c05a150a2d78f8bf5a8eb9c5c4d93405a736b824109574e3f4d"},
+    {file = "croniter-6.2.4.tar.gz", hash = "sha256:fc124f751b1b04805c2a04b061898b436b45ab2320b045e1e052ea895de65189"},
+]
+
+[package.dependencies]
+python-dateutil = "*"
+
+[[package]]
 name = "cryptography"
 version = "50.0.0"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
@@ -5256,6 +5271,44 @@ Pillow = ">=12.2.0"
 pypdfium2 = ">=5.9.0"
 
 [[package]]
+name = "pgqueuer"
+version = "1.3.2"
+description = "Pgqueuer is a Python library leveraging PostgreSQL for efficient job queuing."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "pgqueuer-1.3.2-py3-none-any.whl", hash = "sha256:0823fcb089bb3ffd0580518e91b53888c9be742b42e706f9860b6a533f32bc44"},
+    {file = "pgqueuer-1.3.2.tar.gz", hash = "sha256:11f4c67d9dfc343c02d8bb2e362733a0d44272f6c7e846630fe198f688fa3ed1"},
+]
+
+[package.dependencies]
+anyio = ">=4.0"
+asyncpg = {version = ">=0.30.0", optional = true, markers = "extra == \"asyncpg\""}
+croniter = ">=5.0.1"
+fastapi = {version = ">=0.100.0", optional = true, markers = "extra == \"fastapi\""}
+opentelemetry-api = {version = ">=1.20.0", optional = true, markers = "extra == \"opentelemetry\""}
+opentelemetry-sdk = {version = ">=1.20.0", optional = true, markers = "extra == \"opentelemetry\""}
+opentelemetry-semantic-conventions = {version = ">=0.41b0", optional = true, markers = "extra == \"opentelemetry\""}
+pydantic = ">=2.0.0"
+pydantic-settings = ">=2.6.1"
+tabulate = ">=0.9.0"
+typer = ">=0.15.1"
+uvloop = {version = ">=0.22.0", markers = "sys_platform != \"win32\""}
+
+[package.extras]
+asyncpg = ["asyncpg (>=0.30.0)"]
+dev = ["asyncpg", "asyncpg-stubs", "fastapi", "flask", "httpx", "icecream (>=2.1.3)", "import-linter (>=2.0)", "jinja2 (>=3.1)", "mcp (>=1.0)", "mypy", "mypy-extensions", "opentelemetry-api (>=1.20.0)", "opentelemetry-sdk (>=1.20.0)", "opentelemetry-semantic-conventions (>=0.41b0)", "psycopg (>=3.2.0)", "psycopg-pool (>=3.2)", "pytest", "pytest-asyncio", "pytest-cov", "pytest-mock (>=3.14.0)", "pytest-timeout (>=2.3.1)", "pytest-xdist (>=3.8.0)", "ruff", "testcontainers (>=4.14.2)", "time-machine (>=2.16.0)", "tqdm", "types-croniter", "types-tabulate", "uvicorn"]
+docs = ["mkdocs (>=1.6)", "mkdocs-material (>=9.5)", "mkdocs-redirects", "pymdown-extensions"]
+fastapi = ["fastapi (>=0.100.0)"]
+logfire = ["logfire (>=3.0.0)"]
+mcp = ["asyncpg (>=0.30.0)", "mcp (>=1.0)"]
+opentelemetry = ["opentelemetry-api (>=1.20.0)", "opentelemetry-sdk (>=1.20.0)", "opentelemetry-semantic-conventions (>=0.41b0)"]
+psycopg = ["psycopg (>=3.2.0)", "psycopg-pool (>=3.2)"]
+sentry = ["sentry-sdk (>=2.0.0)"]
+web = ["fastapi (>=0.115.0)", "jinja2 (>=3.1)", "uvicorn (>=0.30)"]
+
+[[package]]
 name = "pgvector"
 version = "0.4.2"
 description = "pgvector support for Python"
@@ -5946,18 +5999,6 @@ markers = "platform_python_implementation != \"PyPy\" and implementation_name !=
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
-]
-
-[[package]]
-name = "pycron"
-version = "3.2.0"
-description = "Simple cron-like parser, which determines if current datetime matches conditions."
-optional = false
-python-versions = "<4.0,>=3.9"
-groups = ["main"]
-files = [
-    {file = "pycron-3.2.0-py3-none-any.whl", hash = "sha256:6d2349746270bd642b71b9f7187cf13f4d9ee2412b4710396a507b5fe4f60dac"},
-    {file = "pycron-3.2.0.tar.gz", hash = "sha256:e125a28aca0295769541a40633f70b602579df48c9cb357c36c28d2628ba2b13"},
 ]
 
 [[package]]
@@ -7738,48 +7779,6 @@ files = [
 widechars = ["wcwidth"]
 
 [[package]]
-name = "taskiq"
-version = "0.12.4"
-description = "Distributed task queue with full async support"
-optional = false
-python-versions = "<4,>=3.10"
-groups = ["main"]
-files = [
-    {file = "taskiq-0.12.4-py3-none-any.whl", hash = "sha256:b910d3676e45b317678b4a8a1865ba6c261f696a02541461c765a7773cf4fa4b"},
-    {file = "taskiq-0.12.4.tar.gz", hash = "sha256:887e6acc72eea322a1515d9863551f00be7c81c6a0f72b2961569e58d68edc34"},
-]
-
-[package.dependencies]
-aiohttp = ">=3"
-anyio = ">=4"
-packaging = ">=19"
-pycron = ">=3.0.0"
-pydantic = ">=1.0,<=3.0"
-taskiq-dependencies = ">=1.3.1,<2"
-
-[package.extras]
-cbor = ["cbor2 (>=5)"]
-metrics = ["prometheus-client (>=0)"]
-msgpack = ["msgpack (>=1.0.7)"]
-opentelemetry = ["opentelemetry-api (>=1.38.0,<2.0.0)", "opentelemetry-instrumentation (>=0.59b0,<1)", "opentelemetry-semantic-conventions (>=0.59b0,<1)"]
-orjson = ["orjson (>=3)"]
-reload = ["gitignore-parser (>=0)", "watchdog (>=4)"]
-uv = ["uvloop (>=0.16.0,<1) ; sys_platform != \"win32\""]
-zmq = ["pyzmq (>=26)"]
-
-[[package]]
-name = "taskiq-dependencies"
-version = "1.5.7"
-description = "FastAPI like dependency injection implementation"
-optional = false
-python-versions = "<4.0,>=3.9"
-groups = ["main"]
-files = [
-    {file = "taskiq_dependencies-1.5.7-py3-none-any.whl", hash = "sha256:6fcee5d159bdb035ef915d4d848826169b6f06fe57cc2297a39b62ea3e76036f"},
-    {file = "taskiq_dependencies-1.5.7.tar.gz", hash = "sha256:0d3b240872ef152b719153b9526d866d2be978aeeaea6600e878414babc2dcb4"},
-]
-
-[[package]]
 name = "tenacity"
 version = "9.1.4"
 description = "Retry code until it succeeds"
@@ -8770,7 +8769,7 @@ description = "Fast implementation of asyncio event loop on top of libuv"
 optional = false
 python-versions = ">=3.8.1"
 groups = ["main"]
-markers = "sys_platform != \"win32\" and sys_platform != \"cygwin\" and platform_python_implementation != \"PyPy\""
+markers = "sys_platform != \"win32\""
 files = [
     {file = "uvloop-0.22.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:ef6f0d4cc8a9fa1f6a910230cd53545d9a14479311e87e3cb225495952eb672c"},
     {file = "uvloop-0.22.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:7cd375a12b71d33d46af85a3343b35d98e8116134ba404bd657b3b1d15988792"},
@@ -9642,4 +9641,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "5603bf993fda6b5e4739d8cd7c1241a0ff7e5ae686a64f41a59d8d76a7cf6ffb"
+content-hash = "c317b88b1b822984b378dd56b3e792a197c301cfbf26e1fc1b3a461ec14c180e"
