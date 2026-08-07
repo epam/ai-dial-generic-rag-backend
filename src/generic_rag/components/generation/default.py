@@ -39,9 +39,8 @@ def _format_attributes(i: int, chunk: AnyChunk, source_attributes: list[str]) ->
     chunk_source = ChunkSource.from_chunk(chunk)
     attributes = [
         ("id", i),
-        ("source", chunk_source.source_url),
+        ("document", chunk_source.source_display_name),
         ("page_number", chunk.page_number),
-        ("title", chunk_source.source_display_name),
     ]
     if source_attributes:
         attributes += [(name, str(chunk_source.source_metadata.get(name, ""))) for name in source_attributes]
@@ -109,12 +108,13 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
             HumanMessagePromptTemplate.from_template("{query}"),
         ])
 
-        prompt_messages = template.invoke(chain_input).to_messages()
+        prompt_messages = template.invoke({"query": chain_input.query}).to_messages()
         assert len(prompt_messages) > 1
 
         last_message = prompt_messages[-1]
-        assert isinstance(last_message, HumanMessage)
-        assert isinstance(last_message.content, str)
+        assert last_message.content == chain_input.query, (
+            f"expected the last prompt message to be the query alone, got: {last_message.content!r}"
+        )
 
         merged_content = merge_content([_text_element(last_message.content)], docs_message)
 
@@ -137,7 +137,7 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
                     content += f"\n{chunk.text}"
 
                 elif isinstance(chunk, ImageChunk):
-                    images.append(chunk.get_data_uri())
+                    images.append(str(chunk.get_data_uri()))
 
             result.append(_text_element(f"<doc {attributes}>{content}\n"))
             result.extend(_image_element(image) for image in images)
