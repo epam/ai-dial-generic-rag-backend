@@ -26,9 +26,11 @@ class DocumentEntity(_EntityBase):
     document_id: Mapped[int]
 
     url: Mapped[str]
-    display_name: Mapped[str]
+    etag: Mapped[str | None]
     mime_type: Mapped[str]
     size: Mapped[int]
+
+    display_name: Mapped[str]
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB)
 
     status: Mapped[DocumentStatus] = mapped_column(Enum(DocumentStatus, native_enum=False, length=15))

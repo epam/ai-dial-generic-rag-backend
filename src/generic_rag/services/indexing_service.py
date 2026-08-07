@@ -79,6 +79,11 @@ class IndexingService:
                 index_names = None  # trigger rebuilding of all indexes
 
         async with status_helper.begin(started=DocumentStatus.indexing, finished=DocumentStatus.ready):
+            async with TaskGroup() as task_group:
+                for idx in await self._channel.get_indexes():
+                    if index_names is None or idx.index_name in index_names:
+                        task_group.create_task(idx.storage.remove(document.id))
+
             await self._index_chunks(
                 self._chunk_service.get_chunks_by_document(
                     document.id,
@@ -116,21 +121,22 @@ class IndexingService:
         :param index_names: list of index names to update
         """
         batch = []
+        batch_number = 0
 
         async def _process_batch():
-            nonlocal batch
+            logger.info(f"processing batch: #{batch_number}")
 
             async with TaskGroup() as task_group:
                 for index in await self._channel.get_indexes():
                     if index_names is None or index.index_name in index_names:
-                        task_group.create_task(index.update(batch))
-
-            batch = []
+                        task_group.create_task(index.add(batch))
 
         async for chunk in chunks:
             batch.append(chunk)
             if len(batch) >= INDEXING_BATCH_SIZE:
                 await _process_batch()
+                batch = []
+                batch_number += 1
 
         if batch:
             await _process_batch()

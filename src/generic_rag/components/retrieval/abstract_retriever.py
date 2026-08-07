@@ -8,13 +8,13 @@ from langchain_core.retrievers import BaseRetriever
 from pydantic import BaseModel, Field, NonNegativeInt, TypeAdapter, create_model
 
 from generic_rag.channel import Channel
+from generic_rag.components.retrieval.chunk_source_manager import ChunkSourcesManager
 from generic_rag.components.retrieval.document_selector import (
     AllDocumentsDocumentSelector,
     DocumentSelector,
 )
 from generic_rag.components.retrieval.retrieval_stage import RetrievalStage
 from generic_rag.components.search_index import ChunkIndex
-from generic_rag.services.chunk_sources_manager import ChunkSourcesManager
 from generic_rag.types import RetrievalStageListener, Retriever
 
 

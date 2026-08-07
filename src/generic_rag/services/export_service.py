@@ -84,8 +84,7 @@ class ExportService:
         logger.info(f"importing document '{os.path.join(record.folder, record.filename)}'")
 
         # import document itself
-        document = await self._document_service.upload_document(
-            folder=record.folder,
+        document = await self._document_service.create_document(
             attachment=UploadFile(
                 BytesIO(record.content_bytes),
                 size=len(record.content_bytes),
@@ -94,6 +93,7 @@ class ExportService:
                     "content-type": record.mime_type,
                 }),
             ),
+            folder=record.folder,
             metadata=record.metadata,
         )
         await self._document_service.set_document_status(document.id, record.status)

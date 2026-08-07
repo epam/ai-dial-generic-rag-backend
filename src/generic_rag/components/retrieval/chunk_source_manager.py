@@ -1,35 +1,13 @@
 import asyncio
 from collections.abc import Generator
-from typing import Self, cast
+from typing import cast
 
 from injection import scoped
 from langchain_core.documents import Document as LangchainDocument
-from pydantic import BaseModel, Field
 
 from generic_rag.scope import ScopeName
 from generic_rag.services.document_service import DocumentService
-from generic_rag.types import AnyChunk, FileStorage
-
-
-class ChunkSource(BaseModel):
-    """Information about the source of the chunk."""
-
-    source_url: str = Field(
-        ...,
-        description="url of the chunk source",
-    )
-    source_display_name: str = Field(
-        ...,
-        description="name of the chunk source that can be displayed to user",
-    )
-    source_metadata: dict = Field(
-        default_factory=dict,
-        description="metadata associated with chunk source",
-    )
-
-    @classmethod
-    def from_chunk(cls, chunk: AnyChunk) -> Self:
-        return cls.model_validate(chunk.model_extra)
+from generic_rag.types import AnyChunk, ChunkSource, FileStorage
 
 
 @scoped(ScopeName.channel)
@@ -71,7 +49,7 @@ class ChunkSourcesManager:
         ):
             return
 
-        for document in await self._document_service.get_document_list(missing_sources):
+        for document in await self._document_service.get_documents_by_id(missing_sources):
             source_url = await self._file_storage.copy_file_to_user(
                 document.url,
                 document.display_name,

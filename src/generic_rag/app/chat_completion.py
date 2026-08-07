@@ -17,8 +17,14 @@ from pydantic_partial import create_partial_model
 
 from generic_rag.channel import Channel, RequestConfig
 from generic_rag.scope import ChannelBindings
-from generic_rag.services.chunk_sources_manager import ChunkSource
-from generic_rag.types import AnswerCallback, AnswerGenerator, AnyChunk, RetrievalStageListener, Retriever
+from generic_rag.types import (
+    AnswerCallback,
+    AnswerGenerator,
+    AnyChunk,
+    ChunkSource,
+    RetrievalStageListener,
+    Retriever,
+)
 from generic_rag.utils.attachment import create_attachment
 from generic_rag.utils.profile import timed_stage
 

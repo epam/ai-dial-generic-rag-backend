@@ -24,7 +24,6 @@ from generic_rag.components.retrieval.document_selector import (
 )
 from generic_rag.scope import ChannelBindings
 from generic_rag.services.chunk_service import ChunkService
-from generic_rag.services.chunk_sources_manager import ChunkSource
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig, SingleFilterModel
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.document_stats_service import DocumentStats, DocumentStatsService
@@ -33,6 +32,7 @@ from generic_rag.types import (
     AnswerCallback,
     AnswerGenerator,
     AnyChunk,
+    ChunkSource,
     ChunkType,
     Document,
     ImageType,

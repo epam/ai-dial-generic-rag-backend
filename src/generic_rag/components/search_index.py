@@ -174,9 +174,9 @@ class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index
 
     @tracer.start_as_current_span("index-update")
     @log_execution_time(logger)
-    async def update(self, chunks: Iterable[AnyChunk]):
+    async def add(self, chunks: Iterable[AnyChunk]):
         """
-        Update index with given chunks.
+        Add given chunks into index.
 
         :param chunks: chunks to update the index with
         """
@@ -185,7 +185,4 @@ class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index
         ]
 
         records = await self._indexer.index_data(data)
-        unique_documents = {record.metadata.document_id for record in records}
-
-        await self._storage.remove(*unique_documents)
         await self._storage.add(records)
