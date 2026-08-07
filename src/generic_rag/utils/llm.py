@@ -9,6 +9,24 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 logger = logging.getLogger(__name__)
 
 
+def _redact_content_block(block: Any) -> Any:
+    """
+    Replace the image payload of a content block with its size.
+    """
+    if not isinstance(block, dict):
+        return block
+
+    if block.get("type") == "image_url":
+        url = str(block.get("image_url", {}).get("url", ""))
+        mime = url[len("data:") : url.index(";")] if url.startswith("data:") and ";" in url else "?"
+        return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,<{len(url)} chars redacted>"}}
+
+    if block.get("type") == "image" and "base64" in block:
+        return {**block, "base64": f"<{len(block['base64'])} chars redacted>"}
+
+    return block
+
+
 class LCMessageLogger(AsyncCallbackHandler):
     # NOTE: According to https://python.langchain.com/docs/modules/callbacks/async_callbacks
     # "If you are planning to use the async API,
@@ -25,7 +43,14 @@ class LCMessageLogger(AsyncCallbackHandler):
 
     @staticmethod
     def langchain_msg_2_role_content(msg: BaseMessage):
-        return {"role": msg.type, "content": msg.content}
+        if isinstance(msg.content, list):
+            content = [_redact_content_block(block) for block in msg.content]
+        else:
+            # history messages carry no block structure, so an inline data uri can only be
+            # found by pattern
+            content = LCMessageLogger.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>\3", msg.content)
+
+        return {"role": msg.type, "content": content}
 
     def __init__(self, log_raw_llm_response: bool = True, log_token_usage: bool = False):
         """
@@ -53,8 +78,6 @@ class LCMessageLogger(AsyncCallbackHandler):
 
         msgs_list = list(map(self.langchain_msg_2_role_content, messages[0]))
         msgs_str = "\n".join(map(str, msgs_list))
-        # remove base64 encoded image from calls to gpt-4-vision.
-        msgs_str = self.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>\3", msgs_str)
 
         logger.info(f"call to {model} with {len(msgs_list)} messages:\n{msgs_str}")
 
