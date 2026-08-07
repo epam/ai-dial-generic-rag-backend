@@ -12,15 +12,23 @@ logger = logging.getLogger(__name__)
 def _redact_content_block(block: Any) -> Any:
     """
     Replace the image payload of a content block with its size.
+
+    Every key other than the payload is preserved, so the log keeps showing whatever else the
+    block carries (``detail``, ``file_id``, ...).
     """
     if not isinstance(block, dict):
         return block
 
     if block.get("type") == "image_url":
-        url = str(block.get("image_url", {}).get("url", ""))
+        image_url = block.get("image_url", {})
+        url = str(image_url.get("url", ""))
         mime = url[len("data:") : url.index(";")] if url.startswith("data:") and ";" in url else "?"
-        return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,<{len(url)} chars redacted>"}}
+        payload = url.partition(",")[2]
+        redacted = f"data:{mime};base64,<{len(payload)} chars redacted>"
+        return {**block, "image_url": {**image_url, "url": redacted}}
 
+    # 'BaseChatModel' rewrites v1 image blocks into the 'image_url' form above before this
+    # callback runs, so this branch is a safeguard against that normalisation going away.
     if block.get("type") == "image" and "base64" in block:
         return {**block, "base64": f"<{len(block['base64'])} chars redacted>"}
 
@@ -39,16 +47,17 @@ class LCMessageLogger(AsyncCallbackHandler):
     Here we define our custom langchain logger.
     """
 
-    RE_B64_IMAGE_IN_HISTORY = re.compile(r"(data:image/(?:\w+);base64,)(.*?)(\'|\"|\n)")
+    # matches the base64 payload itself rather than a delimiter after it, so that a data uri is
+    # redacted wherever it ends - including at the very end of the string
+    RE_B64_IMAGE_IN_HISTORY = re.compile(r"(data:image/\w+;base64,)[A-Za-z0-9+/=]+")
 
     @staticmethod
     def langchain_msg_2_role_content(msg: BaseMessage):
         if isinstance(msg.content, list):
             content = [_redact_content_block(block) for block in msg.content]
         else:
-            # history messages carry no block structure, so an inline data uri can only be
-            # found by pattern
-            content = LCMessageLogger.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>\3", msg.content)
+            # messages without block structure carry an inline data uri, if any, in plain text
+            content = LCMessageLogger.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>", msg.content)
 
         return {"role": msg.type, "content": content}
 
