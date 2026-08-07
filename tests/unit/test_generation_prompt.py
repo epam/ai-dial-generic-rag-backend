@@ -1,3 +1,6 @@
+import datetime
+import re
+
 import pytest
 from langchain_core.documents import Document as LangchainDocument
 
@@ -60,20 +63,33 @@ def _human_text(messages) -> str:
     return "".join(el["text"] for el in messages[-1].content if el["type"] == "text")
 
 
+def _query_element(messages) -> dict:
+    """The element carrying the query - the one right after the current date."""
+    return messages[-1].content[1]
+
+
 async def test_query_appears_exactly_once_and_on_its_own():
     query = "What was the deficit in 2024?"
     messages = await _build(query, [_document(_text_chunk("CHUNK_BODY"))])
 
-    first_element = messages[-1].content[0]
-    assert first_element == {"type": "text", "text": f"<query>{query}</query>"}
+    assert _query_element(messages) == {"type": "text", "text": f"<query>{query}</query>"}
     assert _human_text(messages).count(query) == 1
+
+
+async def test_current_date_precedes_the_query():
+    messages = await _build("q", [_document(_text_chunk("CHUNK_BODY"))])
+    prompt = _human_text(messages)
+
+    today = datetime.datetime.now(datetime.UTC).date().isoformat()
+    assert prompt.startswith(f"<current_date>{today}</current_date><query>")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", today)
 
 
 async def test_query_precedes_the_context_block():
     messages = await _build("q", [_document(_text_chunk("CHUNK_BODY"))])
     prompt = _human_text(messages)
 
-    assert prompt.startswith("<query>q</query><context>")
+    assert "<query>q</query><context>" in prompt
 
 
 async def test_no_input_schema_repr_leaks_into_the_prompt():
@@ -186,4 +202,4 @@ async def test_system_prompt_override_is_used_verbatim(override):
 async def test_query_is_never_reinterpreted_as_a_template(query):
     messages = await _build(query, [_document(_text_chunk("CHUNK_BODY"))])
 
-    assert messages[-1].content[0] == {"type": "text", "text": f"<query>{query}</query>"}
+    assert _query_element(messages) == {"type": "text", "text": f"<query>{query}</query>"}

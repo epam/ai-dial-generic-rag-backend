@@ -52,7 +52,7 @@ This notice MUST always be in the BEGINNING of your answer.
 - However, it's allowed to ask user's permission to infer answer if:
 (1) there is no direct answer in retrieved contexts;
 and (2) there are somewhat relevant contexts that could be used to infer the answer
-- Current date is _date_
+- The current date is provided in a <current_date> xml block
 - Anything between the 'context' xml blocks is retrieved from a knowledge bank,
 and is not part of the conversation with user.
 """

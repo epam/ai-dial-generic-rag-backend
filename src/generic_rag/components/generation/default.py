@@ -1,3 +1,4 @@
+import datetime
 import logging
 from typing import Any
 
@@ -101,10 +102,17 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
         self, chain_input: DefaultChatPromptChainInputSchema, *args, **kwargs
     ) -> list[BaseMessage]:
         docs_message = await self._create_docs_message(chain_input.found_items)
+        today = datetime.datetime.now(datetime.UTC).date().isoformat()
 
         return [
             SystemMessage(content=self._system_prompt),
-            HumanMessage(content=[_text_element(f"<query>{chain_input.query}</query>"), *docs_message]),
+            HumanMessage(
+                content=[
+                    _text_element(f"<current_date>{today}</current_date>"),
+                    _text_element(f"<query>{chain_input.query}</query>"),
+                    *docs_message,
+                ]
+            ),
         ]
 
     async def _create_docs_message(self, found_items: list[LangchainDocument]) -> list[dict[str, Any]]:
