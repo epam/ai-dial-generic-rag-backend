@@ -9,6 +9,32 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 logger = logging.getLogger(__name__)
 
 
+def _redact_content_block(block: Any) -> Any:
+    """
+    Replace the image payload of a content block with its size.
+
+    Every key other than the payload is preserved, so the log keeps showing whatever else the
+    block carries (``detail``, ``file_id``, ...).
+    """
+    if not isinstance(block, dict):
+        return block
+
+    if block.get("type") == "image_url":
+        image_url = block.get("image_url", {})
+        url = str(image_url.get("url", ""))
+        mime = url[len("data:") : url.index(";")] if url.startswith("data:") and ";" in url else "?"
+        payload = url.partition(",")[2]
+        redacted = f"data:{mime};base64,<{len(payload)} chars redacted>"
+        return {**block, "image_url": {**image_url, "url": redacted}}
+
+    # 'BaseChatModel' rewrites v1 image blocks into the 'image_url' form above before this
+    # callback runs, so this branch is a safeguard against that normalisation going away.
+    if block.get("type") == "image" and "base64" in block:
+        return {**block, "base64": f"<{len(block['base64'])} chars redacted>"}
+
+    return block
+
+
 class LCMessageLogger(AsyncCallbackHandler):
     # NOTE: According to https://python.langchain.com/docs/modules/callbacks/async_callbacks
     # "If you are planning to use the async API,
@@ -21,11 +47,19 @@ class LCMessageLogger(AsyncCallbackHandler):
     Here we define our custom langchain logger.
     """
 
-    RE_B64_IMAGE_IN_HISTORY = re.compile(r"(data:image/(?:\w+);base64,)(.*?)(\'|\"|\n)")
+    # matches the base64 payload itself rather than a delimiter after it, so that a data uri is
+    # redacted wherever it ends - including at the very end of the string
+    RE_B64_IMAGE_IN_HISTORY = re.compile(r"(data:image/\w+;base64,)[A-Za-z0-9+/=]+")
 
     @staticmethod
     def langchain_msg_2_role_content(msg: BaseMessage):
-        return {"role": msg.type, "content": msg.content}
+        if isinstance(msg.content, list):
+            content = [_redact_content_block(block) for block in msg.content]
+        else:
+            # messages without block structure carry an inline data uri, if any, in plain text
+            content = LCMessageLogger.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>", msg.content)
+
+        return {"role": msg.type, "content": content}
 
     def __init__(self, log_raw_llm_response: bool = True, log_token_usage: bool = False):
         """
@@ -53,8 +87,6 @@ class LCMessageLogger(AsyncCallbackHandler):
 
         msgs_list = list(map(self.langchain_msg_2_role_content, messages[0]))
         msgs_str = "\n".join(map(str, msgs_list))
-        # remove base64 encoded image from calls to gpt-4-vision.
-        msgs_str = self.RE_B64_IMAGE_IN_HISTORY.sub(r"\1<base64_image>\3", msgs_str)
 
         logger.info(f"call to {model} with {len(msgs_list)} messages:\n{msgs_str}")
 

@@ -1,11 +1,11 @@
+import datetime
 import logging
 from typing import Any
 
 from injection import inject
 from langchain_core.documents import Document as LangchainDocument
-from langchain_core.messages import BaseMessage, HumanMessage, merge_content
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
@@ -39,9 +39,8 @@ def _format_attributes(i: int, chunk: AnyChunk, source_attributes: list[str]) ->
     chunk_source = ChunkSource.from_chunk(chunk)
     attributes = [
         ("id", i),
-        ("source", chunk_source.source_url),
+        ("document", chunk_source.source_display_name),
         ("page_number", chunk.page_number),
-        ("title", chunk_source.source_display_name),
     ]
     if source_attributes:
         attributes += [(name, str(chunk_source.source_metadata.get(name, ""))) for name in source_attributes]
@@ -83,7 +82,7 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
         document_metadata_schema = metadata_schema
 
         if self._generation_config.system_prompt_template_override:
-            self._system_prompt_template = self._generation_config.system_prompt_template_override
+            self._system_prompt = self._generation_config.system_prompt_template_override
         elif self._generation_config.metadata_instructions and document_metadata_schema:
             extra_llm_notes = []
 
@@ -92,9 +91,9 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
                     self._source_attributes.append(key)
                     extra_llm_notes.append(value)
 
-            self._system_prompt_template = DefaultGenerationPrompt.get_prompt(extra_llm_notes)
+            self._system_prompt = DefaultGenerationPrompt.get_prompt(extra_llm_notes)
         else:
-            self._system_prompt_template = DefaultGenerationPrompt.get_prompt()
+            self._system_prompt = DefaultGenerationPrompt.get_prompt()
 
     def invoke(self, *args, **kwargs) -> list[BaseMessage]:
         raise NotImplementedError()
@@ -103,23 +102,18 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
         self, chain_input: DefaultChatPromptChainInputSchema, *args, **kwargs
     ) -> list[BaseMessage]:
         docs_message = await self._create_docs_message(chain_input.found_items)
+        today = datetime.datetime.now(datetime.UTC).date().isoformat()
 
-        template = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(self._system_prompt_template),
-            HumanMessagePromptTemplate.from_template("{query}"),
-        ])
-
-        prompt_messages = template.invoke(chain_input).to_messages()
-        assert len(prompt_messages) > 1
-
-        last_message = prompt_messages[-1]
-        assert isinstance(last_message, HumanMessage)
-        assert isinstance(last_message.content, str)
-
-        merged_content = merge_content([_text_element(last_message.content)], docs_message)
-
-        prompt_messages[-1] = HumanMessage(content=merged_content)
-        return prompt_messages
+        return [
+            SystemMessage(content=self._system_prompt),
+            HumanMessage(
+                content=[
+                    _text_element(f"<current_date>{today}</current_date>"),
+                    _text_element(f"<query>{chain_input.query}</query>"),
+                    *docs_message,
+                ]
+            ),
+        ]
 
     async def _create_docs_message(self, found_items: list[LangchainDocument]) -> list[dict[str, Any]]:
         result = [_text_element("<context>")]
