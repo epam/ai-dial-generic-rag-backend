@@ -1,11 +1,8 @@
-import asyncio
 import functools
 import inspect
 import logging
 import time
-from contextlib import asynccontextmanager, contextmanager
-
-from aidial_sdk.chat_completion import Choice
+from contextlib import asynccontextmanager
 
 
 def log_execution_time(logger: logging.Logger):
@@ -52,26 +49,3 @@ def log_execution_time(logger: logging.Logger):
         raise RuntimeError(f"unsupported target: {repr(target)}")
 
     return decorator
-
-
-@contextmanager
-def timed_stage(choice: Choice, name: str):
-    """Create stage that measures time of execution"""
-
-    async def _periodic_ping(stage_io):
-        while True:
-            try:
-                await asyncio.sleep(15)
-            except asyncio.CancelledError:
-                break
-            stage_io.write("")
-
-    with choice.create_stage(name) as stage:
-        ping_task = asyncio.create_task(_periodic_ping(stage.content_stream))
-        start = time.perf_counter()
-        try:
-            yield stage
-        finally:
-            end = time.perf_counter()
-            ping_task.cancel()
-            stage.append_name(f" [{end - start:.2f}s]")

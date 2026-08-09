@@ -1,11 +1,10 @@
 import logging
 import re
 
-from aidial_sdk.chat_completion import Choice
 from langchain_core.output_parsers import BaseTransformOutputParser, StrOutputParser
 from pydantic import BaseModel
 
-from generic_rag.utils.profile import timed_stage
+from generic_rag.types import AnswerStage
 
 REF_PATTERN = re.compile(r"<\[(\d+)\]>")
 
@@ -13,17 +12,17 @@ logger = logging.getLogger(__name__)
 
 
 class RawLlmOutputReporter(StrOutputParser):
-    def __init__(self, choice: Choice, *args, **kwargs):
+    def __init__(self, stage: AnswerStage, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._choice = choice
+        self._stage = stage
 
     async def atransform(self, *args, **kwargs):
-        with timed_stage(self._choice, "[DEBUG] raw llm output") as stage:
-            stage.append_content("```text\n")
+        with self._stage:
+            self._stage.append_content("```text\n")
             async for chunk in super().atransform(*args, **kwargs):
-                stage.append_content(chunk)
+                self._stage.append_content(chunk)
                 yield chunk
-            stage.append_content("\n```\n")
+            self._stage.append_content("\n```\n")
 
 
 class ReferenceParserOutput(BaseModel):

@@ -3,7 +3,6 @@ import logging
 from typing import Any
 
 from injection import inject
-from langchain_core.documents import Document as LangchainDocument
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
@@ -11,15 +10,14 @@ from pydantic import BaseModel, Field
 
 from generic_rag.channel import Channel
 from generic_rag.components.generation.prompts import DefaultGenerationPrompt
-from generic_rag.components.generation.utils import ReferencesParser
+from generic_rag.components.generation.utils import RawLlmOutputReporter, ReferencesParser
 from generic_rag.types import (
-    AnswerCallback,
+    AbstractAnswer,
     AnswerGenerator,
-    AnyChunk,
-    ChunkSource,
     ImageChunk,
     LlmConfig,
     ModelProvider,
+    RetrievedDocument,
     Retriever,
     TextChunk,
 )
@@ -35,21 +33,9 @@ def _image_element(image_url: str) -> dict:
     return {"type": "image_url", "image_url": {"url": image_url}}
 
 
-def _format_attributes(i: int, chunk: AnyChunk, source_attributes: list[str]) -> str:
-    chunk_source = ChunkSource.from_chunk(chunk)
-    attributes = [
-        ("id", i),
-        ("document", chunk_source.source_display_name),
-        ("page_number", chunk.page_number),
-    ]
-    if source_attributes:
-        attributes += [(name, str(chunk_source.source_metadata.get(name, ""))) for name in source_attributes]
-    return " ".join([f"{key}='{value}'" for key, value in attributes if value is not None])
-
-
 class DefaultChatPromptChainInputSchema(BaseModel):
     query: str
-    found_items: list[LangchainDocument]
+    found_items: list[RetrievedDocument]
 
 
 class DefaultAnswerGeneratorConfig(BaseModel):
@@ -72,7 +58,9 @@ class DefaultAnswerGeneratorConfig(BaseModel):
     )
 
 
-class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[BaseMessage]]):
+class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: list[BaseMessage]](
+    Runnable[DefaultChatPromptChainInputSchema, list[BaseMessage]]
+):
     """A chain that creates messages to be sent in LLM."""
 
     def __init__(self, generation_config: DefaultAnswerGeneratorConfig, metadata_schema: dict[str, Any]):
@@ -98,10 +86,9 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
     def invoke(self, *args, **kwargs) -> list[BaseMessage]:
         raise NotImplementedError()
 
-    async def ainvoke(
-        self, chain_input: DefaultChatPromptChainInputSchema, *args, **kwargs
-    ) -> list[BaseMessage]:
-        docs_message = await self._create_docs_message(chain_input.found_items)
+    # noinspection method-overriding
+    async def ainvoke(self, chain_input: Input, *args, **kwargs: Any) -> Output:
+        context = await self._get_context_elements(chain_input.found_items)
         today = datetime.datetime.now(datetime.UTC).date().isoformat()
 
         return [
@@ -110,23 +97,20 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
                 content=[
                     _text_element(f"<current_date>{today}</current_date>"),
                     _text_element(f"<query>{chain_input.query}</query>"),
-                    *docs_message,
+                    *context,
                 ]
             ),
         ]
 
-    async def _create_docs_message(self, found_items: list[LangchainDocument]) -> list[dict[str, Any]]:
+    async def _get_context_elements(self, found_items: list[RetrievedDocument]) -> list[dict[str, Any]]:
         result = [_text_element("<context>")]
 
         for i, document in enumerate(found_items, start=1):
-            chunks: list[AnyChunk] = document.metadata.get("chunks", [])
-            assert len(chunks) > 0
-
-            attributes = _format_attributes(i, chunks[0], self._source_attributes)
+            attributes = self._format_attributes(i, document, self._source_attributes)
             images = []
             content = ""
 
-            for chunk in chunks:
+            for chunk in document.chunks:
                 if isinstance(chunk, TextChunk):
                     content += f"\n{chunk.text}"
 
@@ -141,6 +125,17 @@ class DefaultChatPromptChain(Runnable[DefaultChatPromptChainInputSchema, list[Ba
 
         return result
 
+    @staticmethod
+    def _format_attributes(i: int, doc: RetrievedDocument, source_attributes: list[str]) -> str:
+        attributes = [
+            ("id", i),
+            ("document", doc.source_display_name),
+            ("page_number", doc.source_page_number),
+        ]
+        if source_attributes:
+            attributes += [(name, str(doc.source_metadata.get(name, ""))) for name in source_attributes]
+        return " ".join([f"{key}='{value}'" for key, value in attributes if value is not None])
+
 
 class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
     """Generates answer with LLM based on chunks returned by configured retriever."""
@@ -151,21 +146,22 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
         self._channel = channel
         self._model_provider = model_provider
 
-    async def invoke(self, query: str, retriever: Retriever, callback: AnswerCallback):
+    async def invoke(self, query: str, retriever: Retriever, answer: AbstractAnswer):
         """
         Generate answer to given user's query.
 
         :param query: the user query to answer
+        :param answer: the current answer
         :param retriever: the :class:`Retriever` used to find relevant chunk information
-        :param callback: a callback to catch answer as it is generated
         """
         llm = self._model_provider.get_llm(self.config.llm)
-        found_items: list[LangchainDocument] = await retriever.invoke(query)
+        found_items = await retriever.invoke(query, answer)
 
         generation_chain = (
             DefaultChatPromptChain(self.config, self._channel.metadata_schema)
             | llm
             | StrOutputParser()
+            | RawLlmOutputReporter(answer.create_stage("raw llm output", debug=True))
             | ReferencesParser()
         )
 
@@ -174,14 +170,23 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
             found_items=found_items,
         )
 
+        used_references: list[int] = []
+
         async for item in generation_chain.astream(chain_input):
             if item.content:
-                callback.append_content(item.content)
+                answer.append_content(item.content)
             if item.reference is not None:
-                reference_index = item.reference
-                if not (0 <= reference_index < len(found_items)):
+                if not (0 <= item.reference < len(found_items)):
                     logger.warning(
-                        f"Reference idx in model response is out of bounds: {reference_index} / {len(found_items)}"
+                        f"Reference idx in model response is out of bounds: {item.reference} / {len(found_items)}"
                     )
                     continue
-                callback.append_reference(reference_index, found_items[reference_index])
+
+                if item.reference not in used_references:
+                    used_references.append(item.reference)
+                    citation_index = len(used_references)
+                    await answer.add_reference(citation_index, found_items[item.reference])
+                else:
+                    citation_index = used_references.index(item.reference) + 1
+
+                await answer.add_citation(citation_index, found_items[item.reference])

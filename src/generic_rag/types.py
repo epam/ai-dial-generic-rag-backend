@@ -4,7 +4,7 @@ import enum
 import operator
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterable, Collection, Generator, Iterable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractContextManager
 from enum import StrEnum
 from functools import cache, reduce
 from types import UnionType
@@ -15,14 +15,12 @@ from typing import (
     ClassVar,
     Literal,
     Protocol,
-    Self,
     TypeVar,
     runtime_checkable,
 )
 
 import humps
 from datauri import DataURI
-from langchain_core.documents import Document as LangchainDocument
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from pydantic import BaseModel, BeforeValidator, ByteSize, ConfigDict, Field, create_model
 from pydantic_core import PydanticUndefined
@@ -62,11 +60,7 @@ class ChunkRef[T: ChunkType](BaseModel):
 class ChunkMetadata(BaseModel):
     """Additional information related to a chunk."""
 
-    page_number: int | None = Field(None, description="number of page where this chunk was extracted")
-
-    model_config = ConfigDict(
-        extra="allow",
-    )
+    page_number: int = Field(description="number of page where this chunk was extracted")
 
 
 class TextChunk(ChunkMetadata, ChunkRef):
@@ -108,27 +102,6 @@ class ImageChunk(ChunkMetadata, ChunkRef):
 
 
 type AnyChunk = TextChunk | ImageChunk
-
-
-class ChunkSource(BaseModel):
-    """Information about the source of the chunk."""
-
-    source_url: str = Field(
-        ...,
-        description="url of the chunk source",
-    )
-    source_display_name: str = Field(
-        ...,
-        description="name of the chunk source that can be displayed to user",
-    )
-    source_metadata: dict = Field(
-        default_factory=dict,
-        description="metadata associated with chunk source",
-    )
-
-    @classmethod
-    def from_chunk(cls, chunk: AnyChunk) -> Self:
-        return cls.model_validate(chunk.model_extra)
 
 
 @enum.unique
@@ -474,63 +447,70 @@ class IndexerCompatibilityError(RuntimeError):
         )
 
 
-class RetrievalStageListener:
-    """Class for implementing hooks for different stages of retrieval process."""
+class RetrievedDocument(BaseModel):
+    """Single result of the retrieval."""
 
-    def begin(self, stage_name: str) -> AbstractAsyncContextManager["RetrievalStageListener"]:
-        """Return context manager that wraps single stage of retrieval process."""
+    chunks: list[AnyChunk] = Field(
+        min_length=1, description="list of relevant chunks included in this result"
+    )
 
-        @asynccontextmanager
-        async def _context_manager():
-            yield self
+    source_id: int = Field(description="ID of the source document")
+    source_url: str = Field(description="URL of the source document")
+    source_page_number: int = Field(description="number of page of the source document")
+    source_display_name: str = Field(
+        description="name of the source document that can be displayed to the user"
+    )
+    source_metadata: dict = Field(
+        default_factory=dict, description="metadata associated with the source document"
+    )
 
-        return _context_manager()
+    model_config = ConfigDict(extra="allow")
 
-    def log_message(self, message: str):
-        """Called to report a message related to stage execution."""
 
-    async def on_retrieval_result(self, retrieved_docs: list[LangchainDocument]):
-        """Called when receive retrieval results."""
+class AnswerStage(AbstractContextManager, ABC):
+    """Represents dedicated stage of RAG answer."""
 
-    async def on_error(self, e: Exception):
-        """Called in case of errors."""
+    @abstractmethod
+    def append_content(self, content: str): ...
+
+    @abstractmethod
+    async def add_citation(self, citation_index: int, doc: RetrievedDocument): ...
+
+    @abstractmethod
+    async def add_reference(self, citation_index: int, doc: RetrievedDocument): ...
+
+
+class AbstractAnswer(AnswerStage, ABC):
+    """Represents the RAG answer itself."""
+
+    @abstractmethod
+    def create_stage(self, name: str, *, debug: bool = False, timed: bool = True) -> AnswerStage: ...
 
 
 class Retriever[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Top-level component responsible for retrieval of relevant chunks for further use."""
 
     @abstractmethod
-    async def invoke(self, query: str) -> list[LangchainDocument]:
+    async def invoke(self, query: str, answer: AbstractAnswer) -> list[RetrievedDocument]:
         """
         Retrieve pieces of information that are relevant to given query.
 
         :param query: the user query used for search
+        :param answer: the current answer (to report retrieval stages execution)
         """
-
-    @abstractmethod
-    def use_listener(self, listener: RetrievalStageListener) -> Self:
-        """Use given retrieval event listener."""
-
-
-class AnswerCallback:
-    """Callback object that allows to catch answer as it is generated"""
-
-    def append_content(self, content: str): ...
-
-    def append_reference(self, reference_index: int, retrieved_doc: LangchainDocument): ...
 
 
 class AnswerGenerator[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Component that generates answer to a user query."""
 
     @abstractmethod
-    async def invoke(self, query: str, retriever: Retriever, callback: AnswerCallback):
+    async def invoke(self, query: str, retriever: Retriever, answer: AbstractAnswer):
         """
         Generate answer to given user's query.
 
         :param query: the user query to answer
         :param retriever: the :class:`Retriever` used to find relevant chunk information
-        :param callback: a callback to catch answer as it is generated
+        :param answer: the current answer
         """
 
 

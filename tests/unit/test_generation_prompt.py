@@ -2,14 +2,13 @@ import datetime
 import re
 
 import pytest
-from langchain_core.documents import Document as LangchainDocument
 
 from generic_rag.components.generation.default import (
     DefaultAnswerGeneratorConfig,
     DefaultChatPromptChain,
     DefaultChatPromptChainInputSchema,
 )
-from generic_rag.types import ImageChunk, ImageType, TextChunk
+from generic_rag.types import AnyChunk, ImageChunk, ImageType, RetrievedDocument, TextChunk
 
 SOURCE_URL = "files/BUCKET-ID/appdata/generic-rag-deployment/reports/Some%20Report%202024.pdf"
 DISPLAY_NAME = "Some Report 2024.pdf"
@@ -17,15 +16,12 @@ DISPLAY_NAME = "Some Report 2024.pdf"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
-def _text_chunk(text: str, *, chunk_id: int = 1, page_number: int = 1, **source) -> TextChunk:
+def _text_chunk(text: str, *, chunk_id: int = 1, page_number: int = 1) -> TextChunk:
     return TextChunk(
         document_id=1,
         chunk_id=chunk_id,
         page_number=page_number,
         text=text,
-        source_url=source.get("source_url", SOURCE_URL),
-        source_display_name=source.get("source_display_name", DISPLAY_NAME),
-        source_metadata=source.get("source_metadata", {}),
     )
 
 
@@ -37,19 +33,23 @@ def _image_chunk(chunk_id: int = 2, page_number: int = 1) -> ImageChunk:
         image_type=ImageType.page,
         mime_type="image/png",
         content=PNG,
-        source_url=SOURCE_URL,
-        source_display_name=DISPLAY_NAME,
-        source_metadata={},
     )
 
 
-def _document(*chunks) -> LangchainDocument:
-    return LangchainDocument(page_content="", metadata={"chunks": list(chunks)})
+def _document(*chunks: AnyChunk, **source) -> RetrievedDocument:
+    return RetrievedDocument(
+        chunks=list(chunks),
+        source_id=chunks[0].document_id,
+        source_page_number=chunks[0].page_number,
+        source_url=source.get("source_url", SOURCE_URL),
+        source_display_name=source.get("source_display_name", DISPLAY_NAME),
+        source_metadata=source.get("source_metadata", {}),
+    )
 
 
 async def _build(
     query: str,
-    documents: list[LangchainDocument],
+    documents: list[RetrievedDocument],
     *,
     metadata_schema: dict | None = None,
     **config,
@@ -132,11 +132,11 @@ async def test_doc_attributes_expose_only_the_display_name():
 
 
 async def test_metadata_instructions_add_configured_source_attributes():
-    chunk = _text_chunk("CHUNK_BODY", source_metadata={"year": "2024"})
+    chunk = _text_chunk("CHUNK_BODY")
     prompt = _human_text(
         await _build(
             "q",
-            [_document(chunk)],
+            [_document(chunk, source_metadata={"year": "2024"})],
             metadata_instructions={"year": "The reporting year."},
             metadata_schema={"properties": {"year": {"type": "string"}}},
         )
@@ -161,7 +161,7 @@ async def test_doc_ids_are_one_based_positions_in_found_items():
     prompt = _human_text(await _build("q", documents))
 
     for position, document in enumerate(documents, start=1):
-        body = document.metadata["chunks"][0].text
+        body = document.chunks[0].text
         assert f"<doc id='{position}'" in prompt
         assert prompt.index(f"<doc id='{position}'") < prompt.index(body)
 
