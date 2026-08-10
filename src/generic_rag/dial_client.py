@@ -109,7 +109,6 @@ class DialFileStorage(FileStorage):
 
         return DialFileMetadata.model_validate(metadata)
 
-    @alru_cache(ttl=5)
     async def get_file_metadata(self, url: str) -> FileMetadata | None:
         assert url.startswith("files/")
 

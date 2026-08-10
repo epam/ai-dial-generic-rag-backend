@@ -110,6 +110,27 @@ class ImageChunk(ChunkMetadata, ChunkRef):
 type AnyChunk = TextChunk | ImageChunk
 
 
+class ChunkSource(BaseModel):
+    """Information about the source of the chunk."""
+
+    source_url: str = Field(
+        ...,
+        description="url of the chunk source",
+    )
+    source_display_name: str = Field(
+        ...,
+        description="name of the chunk source that can be displayed to user",
+    )
+    source_metadata: dict = Field(
+        default_factory=dict,
+        description="metadata associated with chunk source",
+    )
+
+    @classmethod
+    def from_chunk(cls, chunk: AnyChunk) -> Self:
+        return cls.model_validate(chunk.model_extra)
+
+
 @enum.unique
 class DocumentStatus(StrEnum):
     created = enum.auto()

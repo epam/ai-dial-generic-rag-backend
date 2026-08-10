@@ -1,4 +1,5 @@
 import io
+import json
 import os
 from collections.abc import AsyncGenerator, Sequence
 from typing import Annotated, Any
@@ -24,7 +25,14 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.security import APIKeyHeader
 from injection import inject
 from injection.ext.fastapi import Inject
-from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    SecretStr,
+    ValidationError,
+    create_model,
+)
 from starlette.responses import StreamingResponse
 from starlette.status import (
     HTTP_200_OK,
@@ -32,6 +40,7 @@ from starlette.status import (
     HTTP_202_ACCEPTED,
     HTTP_204_NO_CONTENT,
     HTTP_404_NOT_FOUND,
+    HTTP_422_UNPROCESSABLE_CONTENT,
 )
 from starlette.templating import Jinja2Templates
 
@@ -43,6 +52,7 @@ from generic_rag.scope import ChannelBindings
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.export_service import ExportService
+from generic_rag.services.facade_service import FacadeService
 from generic_rag.services.indexing_service import IndexingService
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.services.retrieval_service import RetrievalRequest, RetrievalResult, RetrievalService
@@ -102,32 +112,26 @@ async def list_documents(
 
 
 @_channel.post("/documents", tags=["documents"], status_code=HTTP_201_CREATED)
-async def upload_document(
-    attachment: Annotated[UploadFile, File(description="the document to upload")],
+async def create_document(
+    attachment: Annotated[UploadFile, File(description="the file to upload")],
     folder: Annotated[str, Query(description="optional folder where to store the file")] = "",
     metadata: Annotated[
-        str | None,
+        dict[str, Any] | None,
+        BeforeValidator(json.loads),
         Form(
+            media_type="application/json",
             description="metadata to assign with document (should match json schema associated with this channel)",
             examples=["{}"],
         ),
     ] = None,
-    document_service: Inject[DocumentService] = NotImplemented,
-    indexing_service: Inject[IndexingService] = NotImplemented,
-) -> Document:
+    facade_service: Inject[FacadeService] = NotImplemented,
+):
     """
     Upload document into the channel.
 
     The value of `metadata` should be a valid JSON and should match the json-schema associated with this channel.
     """
-    document = await document_service.upload_document(folder, attachment, metadata)
-
-    if await run_index_document_job(document.id):
-        return document
-
-    await indexing_service.index_document(document)
-
-    return await document_service.get_document(document.id)
+    return await facade_service.create_document(attachment, folder, metadata)
 
 
 @_channel.post("/documents/import", tags=["documents"], status_code=HTTP_201_CREATED)
@@ -148,13 +152,34 @@ async def get_document(
     return await document_service.get_document(document_id)
 
 
+@_channel.put("/documents/{id}", tags=["documents"])
+async def update_document(
+    document_id: Annotated[int, Path(alias="id", description="id of the document")],
+    attachment: Annotated[
+        UploadFile | None, File(description="the file to replace the content of the document with")
+    ] = None,
+    metadata: Annotated[
+        dict[str, Any] | None,
+        BeforeValidator(json.loads),
+        Form(
+            media_type="application/json",
+            description="metadata to set (should match json schema associated with this channel)",
+            examples=["{}"],
+        ),
+    ] = None,
+    facade_service: Inject[FacadeService] = NotImplemented,
+) -> Document:
+    """Update document with given ID by replacing its content and/or metadata."""
+    return await facade_service.update_document(document_id, attachment, metadata)
+
+
 @_channel.delete("/documents/{id}", tags=["documents"], status_code=HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
-    document_service: Inject[DocumentService],
+    facade_service: Inject[FacadeService],
 ):
     """Delete document from the channel"""
-    return await document_service.delete_document(document_id=document_id)
+    return await facade_service.delete_document(document_id)
 
 
 @_channel.get("/documents/{id}/download", tags=["documents"], response_class=StreamingResponse)
@@ -210,7 +235,7 @@ async def export_document_data(
     )
 
 
-@_channel.put("/documents/{id}/metadata", tags=["documents"])
+@_channel.put("/documents/{id}/metadata", tags=["documents"], deprecated=True)
 async def set_document_metadata(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
     body: Annotated[dict[str, Any], Field(description="the metadata to set")],
@@ -219,8 +244,10 @@ async def set_document_metadata(
     """
     Set the metadata for the document.
     Metadata object should match the JSON schema configured for the channel.
+
+    **DEPRECATED**: use `PUT /channel/documents/{id}` instead.
     """
-    return await document_service.set_document_metadata(document_id, body)
+    return await document_service.update_document(document_id, metadata=body)
 
 
 @_channel.put(
@@ -302,7 +329,13 @@ class ChannelConfigMixin(BaseModel):
 
 @inject
 async def _get_channel_router(channel_service: ChannelService = NotImplemented) -> APIRouter:
-    router = APIRouter(prefix="/channel", dependencies=[Depends(_setup_channel_scope)])
+    router = APIRouter(
+        prefix="/channel",
+        dependencies=[Depends(_setup_channel_scope)],
+        responses={
+            HTTP_422_UNPROCESSABLE_CONTENT: {},
+        },
+    )
     channel_config_model = await channel_service.get_channel_config_model()
 
     # noinspection PyTypeChecker

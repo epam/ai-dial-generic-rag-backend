@@ -6,7 +6,7 @@ from langchain_core.retrievers import BaseRetriever
 from opentelemetry.trace import get_tracer
 from pydantic import Field
 
-from generic_rag.services.chunk_sources_manager import ChunkSourcesManager
+from generic_rag.components.retrieval.chunk_source_manager import ChunkSourcesManager
 from generic_rag.types import RetrievalStageListener
 
 tracer = get_tracer(__name__)

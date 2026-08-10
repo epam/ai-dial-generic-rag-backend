@@ -6,8 +6,7 @@ from PIL import Image
 from PIL.Image import Resampling
 from pydantic import StrictStr
 
-from generic_rag.services.chunk_sources_manager import ChunkSource
-from generic_rag.types import AnyChunk, ImageChunk, TextChunk
+from generic_rag.types import AnyChunk, ChunkSource, ImageChunk, TextChunk
 
 
 def create_attachment(chunks: list[AnyChunk], cite_index: str | int) -> Attachment | None:

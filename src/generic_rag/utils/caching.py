@@ -33,23 +33,26 @@ class CachingFileStorage(FileStorage):
         return await self._storage.get_file_metadata(url)
 
     async def download_file(self, url: str) -> AsyncIterable[bytes] | None:
+        logger.debug(f"{self.__class__.__qualname__}: requested file, {url=}")
+
         if metadata := await self._storage.get_file_metadata(url):
             cache_key = (url, metadata.etag)
+            logger.debug(f"{self.__class__.__qualname__}: {cache_key=}")
 
             if cache_key not in self._cache and float(metadata.content_length) < self._cache.maxsize:
                 content = b"".join([chunk async for chunk in await self._storage.download_file(url)])
                 self._add_to_cache(cache_key, content)
 
             if (content := self._cache.get(cache_key)) is not None:
+                logger.debug(f"{self.__class__.__qualname__}: return cached value, {url=}")
 
                 async def _content_gen():
                     yield content
 
                 return _content_gen()
 
-            return await self._storage.download_file(url)
-
-        return None
+        logger.debug(f"{self.__class__.__qualname__}: metadata not found, {url=}")
+        return await self._storage.download_file(url)
 
     async def copy_file_to_user(self, source_url: str, destination_name: str) -> str:
         return await self._storage.copy_file_to_user(source_url, destination_name)

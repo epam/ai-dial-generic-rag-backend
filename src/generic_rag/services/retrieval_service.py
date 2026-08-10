@@ -6,8 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from generic_rag.channel import Channel, RequestConfig
 from generic_rag.scope import ScopeName
-from generic_rag.services.chunk_sources_manager import ChunkSource
-from generic_rag.types import AnyChunk, ImageChunk, Retriever, TextChunk
+from generic_rag.types import AnyChunk, ChunkSource, ImageChunk, Retriever, TextChunk
 
 
 class RetrievalRequest(BaseModel):

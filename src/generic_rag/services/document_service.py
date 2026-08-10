@@ -1,28 +1,26 @@
-import asyncio
 import hashlib
-import json
 import logging
 import os
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sequence
-from typing import Any, Self
+from pathlib import PosixPath
+from typing import Self
 from urllib.parse import unquote
 
 import jsonschema
-from fastapi import HTTPException, UploadFile
+from aidial_sdk.exceptions import InvalidRequestError, RequestValidationError, ResourceNotFoundError
+from fastapi import UploadFile
 from injection import scoped
 from pydantic import Field
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_CONTENT
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from generic_rag.channel import Channel
 from generic_rag.db.entities import DocumentEntity
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.scope import ScopeName
-from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_matcher import DocumentMatcher
-from generic_rag.types import Document, DocumentStatus, FileStorage
+from generic_rag.types import Document, DocumentStatus, FileMetadata, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 from generic_rag.utils.repository import RepositoryMixin
 
@@ -103,6 +101,20 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         )
         return result.all()
 
+    async def exists(self, document_id: int) -> bool:
+        return (
+            await get_current_session().scalar(
+                select(DocumentEntity.document_id)
+                .where(
+                    DocumentEntity.channel_key == self._channel_key,
+                    DocumentEntity.document_id == document_id,
+                )
+                .exists()
+                .select()
+            )
+            or False
+        )
+
     async def set_status(self, document_id: int, status: DocumentStatus):
         await get_current_session().execute(
             update(DocumentEntity)
@@ -147,10 +159,9 @@ class _Document(Document):
 class DocumentService:
     """Service for managing documents stored in channel."""
 
-    def __init__(self, channel: Channel, file_storage: FileStorage, chunk_service: ChunkService):
+    def __init__(self, channel: Channel, file_storage: FileStorage):
         self._channel = channel
         self._file_storage = file_storage
-        self._chunk_service = chunk_service
         self._repository = DocumentRepository(channel.channel_key)
 
     @transaction
@@ -174,118 +185,153 @@ class DocumentService:
         total_count = await self._repository.get_total_count(matcher)
         return PaginatedResults.create(results, pagination, total_count)
 
-    async def upload_document(
-        self, folder: str, attachment: UploadFile, metadata: str | dict | None
+    @transaction
+    async def create_document(
+        self, attachment: UploadFile, folder: str | None = None, metadata: dict | None = None
     ) -> Document:
         """
         Upload document to a channel.
 
-        :param folder: path of a folder within a channel (can have multiple parts)
-        :param attachment: the document to upload
-        :param metadata: metadata to assign with document (should match json schema associated with this channel)
+        :param attachment: the file to upload
+        :param folder: path of a target folder within a channel (can have multiple parts)
+        :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
         """
-        if isinstance(metadata, str):
-            try:
-                metadata = json.loads(metadata)
-            except json.JSONDecodeError as e:
-                raise HTTPException(
-                    status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=f"{metadata}: invalid json: {str(e)}",
-                ) from e
+        assert attachment.filename
+        assert attachment.content_type
 
         self._validate_attachment(attachment)
         self._validate_metadata(metadata)
 
-        assert attachment.size is not None
-        assert attachment.content_type is not None
-        assert attachment.filename is not None
+        bucket = await self._file_storage.get_bucket()
+        upload_path = self._get_upload_filepath(attachment.filename, folder)
 
-        url = await self._upload_attachment(folder, attachment)
-        display_name = unquote(os.path.join(folder, attachment.filename))
-
-        return await self._create_document(
-            url=url,
-            display_name=display_name,
+        file_meta = await self._file_storage.put_file(
+            bucket,
+            filepath=upload_path,
             content_type=attachment.content_type,
-            size=attachment.size,
-            metadata=metadata,
+            content=attachment.file,
         )
+
+        display_name = self._get_display_name(file_meta.url, attachment.filename)
+
+        if (entity := await self._repository.get_by_url(file_meta.url)) is not None:
+            if entity.etag != file_meta.etag:
+                entity.status = DocumentStatus.created
+
+            entity.etag = file_meta.etag
+            entity.mime_type = file_meta.content_type
+            entity.size = file_meta.content_length
+
+            entity.display_name = display_name
+            entity.metadata_ = metadata or {}
+
+            return _Document.from_entity(await self._repository.save(entity), self._file_storage)
+
+        return await self._create_document(file_meta, display_name, metadata)
+
+    @transaction
+    async def update_document(
+        self, document_id: int, attachment: UploadFile | None = None, metadata: dict | None = None
+    ) -> Document:
+        """
+        Update document with given ID by replacing its content and/or metadata.
+
+        :param document_id: the id of required document
+        :param attachment: the file to replace the document's content with
+        :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
+        """
+        if (entity := await self._repository.get_by_id(document_id)) is None:
+            raise ResourceNotFoundError(f"Document '{document_id}' not found.")
+
+        if attachment is not None:
+            assert attachment.content_type
+
+            self._validate_attachment(attachment)
+
+            bucket = await self._file_storage.get_bucket()
+            upload_path = str(PosixPath(entity.url).relative_to(PosixPath(f"files/{bucket}")))
+
+            file_meta = await self._file_storage.put_file(
+                bucket,
+                filepath=upload_path,
+                content_type=attachment.content_type,
+                content=attachment.file,
+            )
+            assert file_meta.url == entity.url
+
+            if entity.etag != file_meta.etag:
+                entity.status = DocumentStatus.created
+
+            entity.etag = file_meta.etag
+            entity.mime_type = file_meta.content_type
+            entity.size = file_meta.content_length
+
+        if metadata is not None:
+            self._validate_metadata(metadata)
+            entity.metadata_ = metadata
+
+        return _Document.from_entity(await self._repository.save(entity), self._file_storage)
 
     @retry(stop=stop_after_attempt(10), retry=retry_if_exception_type(IntegrityError))
     @transaction
     async def _create_document(
-        self,
-        url: str,
-        display_name: str,
-        content_type: str,
-        size: int,
-        metadata: dict | None,
-    ) -> Document:
-        if (entity := await self._repository.get_by_url(url)) is not None:
-            document_id = entity.document_id
-            await self._repository.delete(entity)
-        else:
-            document_id = await self._repository.get_next_id()
-
-        entity = await self._repository.save(
-            DocumentEntity(
-                channel_key=self._channel.channel_key,
-                document_id=document_id,
-                status=DocumentStatus.created,
-                url=url,
-                display_name=display_name,
-                mime_type=content_type,
-                size=size,
-                metadata_=metadata or {},
-            )
+        self, file_meta: FileMetadata, display_name: str, metadata: dict | None
+    ) -> _Document:
+        return _Document.from_entity(
+            await self._repository.save(
+                DocumentEntity(
+                    channel_key=self._channel.channel_key,
+                    document_id=await self._repository.get_next_id(),
+                    status=DocumentStatus.created,
+                    url=file_meta.url,
+                    etag=file_meta.etag,
+                    display_name=display_name,
+                    mime_type=file_meta.content_type,
+                    size=file_meta.content_length,
+                    metadata_=metadata or {},
+                )
+            ),
+            self._file_storage,
         )
-
-        return _Document.from_entity(entity, self._file_storage)
 
     @staticmethod
     def _validate_attachment(attachment: UploadFile):
-        if attachment.size < 1:
-            raise HTTPException(
-                status_code=HTTP_400_BAD_REQUEST,
-                detail="Invalid attachment",
-            )
-
+        if not (attachment.size and attachment.content_type and attachment.filename):
+            raise InvalidRequestError("Invalid attachment")
         if attachment.content_type != "application/pdf":
-            raise HTTPException(
-                status_code=HTTP_400_BAD_REQUEST,
-                detail=f"'{attachment.content_type}': invalid file type",
-            )
+            raise InvalidRequestError(f"'{attachment.content_type}': unsupported file type")
 
     def _validate_metadata(self, metadata: dict | None):
         if not metadata:
             return
-
         try:
             jsonschema.validate(
                 metadata,
                 self._channel.metadata_schema,
                 format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
             )
-
         except jsonschema.ValidationError as e:
-            raise HTTPException(
-                status_code=HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Document metadata is not valid: {str(e)}"
+            raise RequestValidationError(
+                str(e), display_message=f"Value of metadata violates JSON schema: {e.message}"
             ) from e
 
-    async def _upload_attachment(self, folder: str, attachment: UploadFile) -> str:
-        assert attachment.filename is not None
-        assert attachment.content_type is not None
+    @staticmethod
+    def _get_upload_filepath(filename: str, folder: str | None = None) -> str:
+        """
+        Return full path with an application bucket for uploading file with given filename and folder.
 
-        bucket = await self._file_storage.get_bucket()
-        basename, ext = os.path.splitext(attachment.filename)
-        filename = hashlib.sha1(basename.lower().encode()).hexdigest() + ext
-        file_metadata = await self._file_storage.put_file(
-            bucket,
-            filepath=os.path.join("documents", folder, filename),
-            content_type=attachment.content_type,
-            content=attachment.file,
-        )
-        return file_metadata.url
+        :param filename: the filename of source file
+        :param folder: target folder where the file should be uploaded
+        """
+        basename, ext = os.path.splitext(filename.strip())
+        target_folder = PosixPath((folder or "").strip().lstrip("/"))
+        target_name = hashlib.sha1(basename.lower().encode()).hexdigest() + ext
+        return str(PosixPath("documents", *target_folder.parts, target_name))
+
+    @staticmethod
+    def _get_display_name(url: str, original_filename: str):
+        file_path = PosixPath(unquote(url))
+        return str(file_path.relative_to(PosixPath(*file_path.parts[:3])).with_name(original_filename))
 
     @transaction
     async def get_document(self, document_id: int) -> Document:
@@ -297,13 +343,10 @@ class DocumentService:
         if document := await self._repository.get_by_id(document_id):
             return _Document.from_entity(document, self._file_storage)
 
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Document '{document_id}' not found.",
-        )
+        raise ResourceNotFoundError(f"Document '{document_id}' not found.")
 
     @transaction
-    async def get_document_list(self, document_ids: Iterable[int]) -> list[Document]:
+    async def get_documents_by_id(self, document_ids: Iterable[int]) -> list[Document]:
         """
         Return documents with given IDs.
 
@@ -325,47 +368,23 @@ class DocumentService:
         await self._repository.set_status(document_id, status)
 
     @transaction
-    async def set_document_metadata(self, document_id: int, metadata: dict[str, Any]) -> Document:
+    async def exists(self, document_id) -> bool:
         """
-        Set metadata for given document.
+        Check if the document with given ID exists.
 
-        :param document_id: id of target document
-        :param metadata: metadata dictionary to set
-        :return: the updated document
+        :param document_id: id of required document
         """
-        self._validate_metadata(metadata)
-
-        if document := await self._repository.get_by_id(document_id):
-            document.metadata_ = metadata
-            document = await self._repository.save(document)
-            return _Document.from_entity(document, self._file_storage)
-
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Document '{document_id}' not found.",
-        )
+        return await self._repository.exists(document_id)
 
     @transaction
     async def delete_document(self, document_id: int) -> None:
         """
-        Delete document with given id and all related data.
+        Delete document with given id.
 
         :param document_id: id of required document
         """
-        if (document := await self._repository.get_by_id(document_id)) is None:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail=f"Document '{document_id}' not found.",
-            )
+        if (entity := await self._repository.get_by_id(document_id)) is None:
+            raise ResourceNotFoundError(f"Document '{document_id}' not found.")
 
-        # cleanup indexes
-        tasks = [idx.storage.remove(document.document_id) for idx in await self._channel.get_indexes()]
-        await asyncio.gather(*tasks)
-
-        # remove chunks and their data (we cannot rely only on cascade delete
-        # because image chunks has files that wouldn't be deleted in that case)
-        await self._chunk_service.delete_chunks_by_document(document.document_id)
-
-        # remove the document itself
-        await self._file_storage.delete_file(document.url)
-        await self._repository.delete(document)
+        await self._file_storage.delete_file(entity.url)
+        await self._repository.delete(entity)

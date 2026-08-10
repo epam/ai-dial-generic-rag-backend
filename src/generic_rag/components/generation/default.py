@@ -12,11 +12,11 @@ from pydantic import BaseModel, Field
 from generic_rag.channel import Channel
 from generic_rag.components.generation.prompts import DefaultGenerationPrompt
 from generic_rag.components.generation.utils import ReferencesParser
-from generic_rag.services.chunk_sources_manager import ChunkSource
 from generic_rag.types import (
     AnswerCallback,
     AnswerGenerator,
     AnyChunk,
+    ChunkSource,
     ImageChunk,
     LlmConfig,
     ModelProvider,

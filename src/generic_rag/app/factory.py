@@ -3,15 +3,15 @@ import http
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import aidial_sdk
 import fastapi
 from aidial_sdk import DIALApp
 from aidial_sdk.telemetry.types import MetricsConfig, TelemetryConfig, TracingConfig
-from aidial_sdk.utils.json import remove_nones
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from injection import afind_instance, find_instance, set_constant
 from injection.loaders import load_packages
 from sqlalchemy.ext.asyncio import AsyncEngine
-from starlette.responses import JSONResponse
 
 import generic_rag.app.dependencies
 import generic_rag.components
@@ -29,21 +29,23 @@ from generic_rag.db.session import DbSessionMaker
 logger = logging.getLogger(__name__)
 
 
-# noinspection PyUnusedLocal
-def _fastapi_http_exception_handler(request: Request, exc: Exception):
-    assert isinstance(exc, fastapi.HTTPException)
-
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": remove_nones({
-                "message": http.HTTPStatus(exc.status_code).phrase,
-                "type": "runtime_error",
-                "code": exc.status_code,
-                "display_message": exc.detail,
-            })
-        },
-        headers=exc.headers,
+def _convert_exception(exc: Exception) -> aidial_sdk.HTTPException:
+    match exc:
+        case aidial_sdk.HTTPException():
+            return exc
+        case fastapi.HTTPException():
+            return aidial_sdk.HTTPException(
+                message=http.HTTPStatus(exc.status_code).phrase,
+                status_code=exc.status_code,
+                display_message=exc.detail,
+            )
+        case fastapi.exceptions.RequestValidationError():
+            return aidial_sdk.exceptions.RequestValidationError(
+                "Request validation error", detail=jsonable_encoder(exc.errors())
+            )
+    return aidial_sdk.HTTPException(
+        message=str(exc),
+        display_message="Internal error",
     )
 
 
@@ -94,6 +96,11 @@ def create_app() -> DIALApp:
         openapi_url=None,  # disable automatic documentation
     )
 
-    app.add_exception_handler(fastapi.HTTPException, _fastapi_http_exception_handler)
+    for cls in [
+        Exception,
+        fastapi.HTTPException,
+        fastapi.exceptions.RequestValidationError,
+    ]:
+        app.add_exception_handler(cls, lambda request, exc: _convert_exception(exc).to_fastapi_response())
 
     return app
