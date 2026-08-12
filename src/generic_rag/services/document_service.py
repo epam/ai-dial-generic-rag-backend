@@ -101,13 +101,27 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         )
         return result.all()
 
-    async def exists(self, document_id: int) -> bool:
+    async def exists_by_id(self, document_id: int) -> bool:
         return (
             await get_current_session().scalar(
                 select(DocumentEntity.document_id)
                 .where(
                     DocumentEntity.channel_key == self._channel_key,
                     DocumentEntity.document_id == document_id,
+                )
+                .exists()
+                .select()
+            )
+            or False
+        )
+
+    async def exists_by_url(self, url: str) -> bool:
+        return (
+            await get_current_session().scalar(
+                select(DocumentEntity.document_id)
+                .where(
+                    DocumentEntity.channel_key == self._channel_key,
+                    DocumentEntity.url == url,
                 )
                 .exists()
                 .select()
@@ -318,10 +332,11 @@ class DocumentService:
     @staticmethod
     def _get_upload_filepath(filename: str, folder: str | None = None) -> str:
         """
-        Return full path with an application bucket for uploading file with given filename and folder.
+        Return full path within an application bucket to upload a file with given filename and folder.
 
         :param filename: the filename of source file
         :param folder: target folder where the file should be uploaded
+        :returns: the upload path (without `files/{bucket}` prefix)
         """
         basename, ext = os.path.splitext(filename.strip())
         target_folder = PosixPath((folder or "").strip().lstrip("/"))
@@ -368,13 +383,27 @@ class DocumentService:
         await self._repository.set_status(document_id, status)
 
     @transaction
-    async def exists(self, document_id) -> bool:
+    async def exists_by_id(self, document_id) -> bool:
         """
-        Check if the document with given ID exists.
+        Check existence of a document by its ID.
 
         :param document_id: id of required document
         """
-        return await self._repository.exists(document_id)
+        return await self._repository.exists_by_id(document_id)
+
+    @transaction
+    async def exists_by_name(self, filename: str, folder: str = "") -> bool:
+        """
+        Check existence of a document by its filename and folder.
+
+        :param filename: the filename
+        :param folder: path of a target folder
+        """
+        bucket = await self._file_storage.get_bucket()
+        upload_path = self._get_upload_filepath(filename, folder)
+        return await self._repository.exists_by_url(
+            f"files/{bucket}/{upload_path}",
+        )
 
     @transaction
     async def delete_document(self, document_id: int) -> None:

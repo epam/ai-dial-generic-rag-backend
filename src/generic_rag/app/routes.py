@@ -143,6 +143,22 @@ async def import_document(
     return await export_service.import_document(await attachment.read())
 
 
+class ExistsResponse(BaseModel):
+    exists: bool
+
+
+@_channel.get("/documents/exists", tags=["documents"])
+async def check_document_existence(
+    filename: Annotated[str, Query(description="the filename")],
+    folder: Annotated[str, Query(description="folder where to store the file")] = "",
+    document_service: Inject[DocumentService] = NotImplemented,
+) -> ExistsResponse:
+    """Check existence of a document by its filename and folder."""
+    return ExistsResponse(
+        exists=await document_service.exists_by_name(filename, folder),
+    )
+
+
 @_channel.get("/documents/{id}", tags=["documents"])
 async def get_document(
     document_id: Annotated[int, Path(alias="id", description="id of the document")],
