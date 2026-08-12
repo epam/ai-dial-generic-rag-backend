@@ -31,16 +31,21 @@ class FacadeService:
         self._indexing_service = indexing_service
 
     async def create_document(
-        self, attachment: UploadFile, folder: str | None = None, metadata: dict | None = None
+        self,
+        attachment: UploadFile,
+        folder: str | None = None,
+        metadata: dict | None = None,
+        overwrite: bool = False,
     ) -> Document:
         """
         Upload document to a channel.
 
         :param attachment: the file to upload
         :param folder: path of a target folder within a channel (can have multiple parts)
+        :param overwrite: allow to overwrite the document that already exists (if any)
         :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
         """
-        document = await self._document_service.create_document(attachment, folder, metadata)
+        document = await self._document_service.create_document(attachment, folder, metadata, overwrite)
 
         if document.status == DocumentStatus.ready:
             return document
