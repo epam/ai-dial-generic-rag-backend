@@ -34,11 +34,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
     uv pip install -r requirements.txt \
-        --index-strategy unsafe-best-match \
-        --compile-bytecode \
-        --system
+      --index-strategy unsafe-best-match \
+      --system
 
-RUN python -m spacy download en_core_web_sm --system && \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    python -m spacy download en_core_web_sm --system && \
     python -m spacy download uk_core_news_sm --system
 
 # creates a non-root user with an explicit UID and adds permission to access the app folder
