@@ -3,7 +3,7 @@ import json
 import os
 from collections.abc import AsyncGenerator, Sequence
 from typing import Annotated, Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from async_lru import alru_cache
 from fastapi import (
@@ -124,6 +124,10 @@ async def create_document(
             examples=["{}"],
         ),
     ] = None,
+    overwrite: Annotated[
+        bool,
+        Query(description="allow to overwrite the document that already exists (if any)"),
+    ] = False,
     facade_service: Inject[FacadeService] = NotImplemented,
 ):
     """
@@ -131,16 +135,20 @@ async def create_document(
 
     The value of `metadata` should be a valid JSON and should match the json-schema associated with this channel.
     """
-    return await facade_service.create_document(attachment, folder, metadata)
+    return await facade_service.create_document(attachment, folder, metadata, overwrite)
 
 
 @_channel.post("/documents/import", tags=["documents"], status_code=HTTP_201_CREATED)
 async def import_document(
     attachment: Annotated[UploadFile, File(..., description="the exported document to import")],
-    export_service: Inject[ExportService],
+    overwrite: Annotated[
+        bool,
+        Query(description="allow to overwrite the document that already exists (if any)"),
+    ] = False,
+    export_service: Inject[ExportService] = NotImplemented,
 ) -> Document:
     """Import document into the channel."""
-    return await export_service.import_document(await attachment.read())
+    return await export_service.import_document(await attachment.read(), overwrite)
 
 
 class ExistsResponse(BaseModel):
@@ -213,12 +221,13 @@ async def download_document_content(
             detail=f"Unable to download document '{document_id}'.",
         )
 
+    filename = quote(os.path.basename(document.display_name))
     return StreamingResponse(
         content=content_stream,
         media_type=document.mime_type,
         headers={
             "Content-Length": str(document.size),
-            "Content-Disposition": f'attachment; filename="{os.path.basename(document.display_name)}"',
+            "Content-Disposition": f"attachment; filename*=utf-8''{filename}",
             "Access-Control-Expose-Headers": "content-disposition",
         },
     )
@@ -240,12 +249,13 @@ async def export_document_data(
             yield chunk
 
     name, _ = os.path.splitext(os.path.basename(document.display_name))
+    filename = quote(f"{document_id}_{name}.msgpack")
     return StreamingResponse(
         content=_content_stream(),
         media_type="application/vnd.msgpack",
         headers={
             "Content-Length": str(len(document_data)),
-            "Content-Disposition": f'attachment; filename="{name}.msgpack"',
+            "Content-Disposition": f"attachment; filename*=utf-8''{filename}",
             "Access-Control-Expose-Headers": "content-disposition",
         },
     )

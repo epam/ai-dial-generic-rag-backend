@@ -77,8 +77,13 @@ class ExportService:
         return packb(document_record.model_dump())
 
     @log_execution_time(logger)
-    async def import_document(self, document_data: bytes) -> Document:
-        """Import document and its related data."""
+    async def import_document(self, document_data: bytes, overwrite: bool = False) -> Document:
+        """
+        Import document and its related data.
+
+        :param document_data: serialized instance of DocumentRecord
+        :param overwrite: allow to overwrite the document that already exists (if any)
+        """
         record = DocumentRecord.model_validate(unpackb(document_data))
 
         logger.info(f"importing document '{os.path.join(record.folder, record.filename)}'")
@@ -95,6 +100,7 @@ class ExportService:
             ),
             folder=record.folder,
             metadata=record.metadata,
+            overwrite=overwrite,
         )
         await self._document_service.set_document_status(document.id, record.status)
 

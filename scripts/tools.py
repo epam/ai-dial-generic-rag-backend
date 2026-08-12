@@ -116,13 +116,13 @@ async def _export_document(
             target_dir,
             response.content_disposition.filename,
         )
-        logger.info(f"exporting document '{response.content_disposition.filename}'")
+        logger.info(f"exported document '{response.content_disposition.filename}'")
         try:
             async with aiofiles.open(target_path, "wb") as fp:
                 async for chunk in response.content.iter_chunked(512 * 1024):
                     await fp.write(chunk)
         except Exception as e:
-            logger.warning(f"{document_id}: {str(e)}")
+            logger.warning(f"{document_id=}: {str(e)}")
         else:
             return target_path
 
@@ -140,6 +140,7 @@ async def _import_document(session: ClientSession, application_id, *, source_pat
     attachment_filename = os.path.basename(source_path)
 
     data = FormData()
+    params = {"overwrite": "true"}
 
     async with aiofiles.open(source_path, "rb") as fp:
         data.add_field(
@@ -151,7 +152,9 @@ async def _import_document(session: ClientSession, application_id, *, source_pat
 
     logger.info(f"importing '{source_path}'")
 
-    async with session.post(f"{application_route}/channel/documents/import", data=data) as response:
+    async with session.post(
+        f"{application_route}/channel/documents/import", data=data, params=params
+    ) as response:
         response.raise_for_status()
         body = await response.json()
         return body["id"]
@@ -182,18 +185,30 @@ async def _export_channel(application_id: str, archive_path: str):
                 _export_document_task(document["id"])
                 async for document in _list_documents(session, application_id)
             ]
-            exported_files = await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks)
+            exported_files = [item for item in results if item]
 
-            with open(archive_path, "wb") as fp, ZipFile(fp, mode="w", compression=ZIP_DEFLATED) as zip_file:
-                zip_file.writestr("_channel.json", json.dumps(channel_config, indent=2))
-                for source_path in exported_files:
-                    if not source_path:
-                        continue
-                    filename = os.path.relpath(source_path, workdir)
-                    logger.info(f"> appending '{filename}'")
-                    zip_file.write(source_path, arcname=filename)
+            if exported_files:
+                with (
+                    open(archive_path, "wb") as fp,
+                    ZipFile(fp, mode="w", compression=ZIP_DEFLATED) as zip_file,
+                ):
+                    zip_file.writestr("_channel.json", json.dumps(channel_config, indent=2))
+                    for source_path in exported_files:
+                        filename = os.path.relpath(source_path, workdir)
+                        logger.info(f"> appending '{filename}'")
+                        zip_file.write(source_path, arcname=filename)
 
-        logger.info(f"successfully exported data of '{application_id}' as '{zip_file.filename}'")
+                logger.info(f"data of '{application_id}' saved as '{zip_file.filename}'")
+
+        total_processed = len(results)
+        total_exported = len(exported_files)
+        total_errors = total_processed - total_exported
+
+        logger.info(f"{total_processed=}, {total_exported=}, {total_errors=}")
+        logger.info(
+            f"export of '{application_id}' completed {'successfully' if not total_errors else 'with errors'}."
+        )
 
 
 async def _import_channel(application_id: str, archive_path: str):
@@ -212,7 +227,7 @@ async def _import_channel(application_id: str, archive_path: str):
             if diff := DeepDiff(
                 expected_channel_config,
                 channel_config,
-                exclude_paths=["channel_key"],
+                exclude_paths=["channel_key", "retriever", "generation"],
                 view=COLORED_COMPACT_VIEW,
             ):
                 raise OperationError(f"channel config mismatch: {diff}")
@@ -232,14 +247,22 @@ async def _import_channel(application_id: str, archive_path: str):
                     async with semaphore:
                         try:
                             await _import_document(session, application_id, source_path=source_path)
+                            return True
                         except Exception as e:
                             logger.warning(f"unable to import '{source_path}': {str(e)}")
+                    return False
 
                 tasks = [_import_document_task(item) for item in exported_files]
-                await asyncio.gather(*tasks)
+                results = await asyncio.gather(*tasks)
 
+                total_processed = len(results)
+                total_imported = len([item for item in results if item])
+                total_errors = total_processed - total_imported
+
+            logger.info(f"{total_processed=}, {total_imported=}, {total_errors=}")
             logger.info(
-                f"successfully imported data from '{zip_file.filename}' into application '{application_id}'"
+                f"import of '{zip_file.filename}' into application '{application_id}' completed "
+                f"{'successfully' if not total_errors else 'with errors'}."
             )
 
 
