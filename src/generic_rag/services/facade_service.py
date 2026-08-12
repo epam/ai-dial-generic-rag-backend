@@ -76,7 +76,7 @@ class FacadeService:
 
         :param document_id: id of required document
         """
-        if not await self._document_service.exists(document_id):
+        if not await self._document_service.exists_by_id(document_id):
             raise ResourceNotFoundError(f"Document '{document_id}' not found.")
 
         await self._delete_document_data(document_id)
