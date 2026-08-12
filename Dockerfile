@@ -26,16 +26,17 @@ RUN apt-get update && \
       libgthread-2.0 && \
     apt-get clean
 
-# remove pip and related tools - we will use uv instead
 RUN python -m ensurepip --version && \
     python -m pip uninstall -y pip setuptools wheel
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
-    uv pip install -r requirements.txt --system --index-strategy unsafe-best-match
+    uv pip install -r requirements.txt \
+        --index-strategy unsafe-best-match \
+        --compile-bytecode \
+        --system
 
 RUN python -m spacy download en_core_web_sm --system && \
     python -m spacy download uk_core_news_sm --system
