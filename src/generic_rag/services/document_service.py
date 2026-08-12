@@ -187,7 +187,11 @@ class DocumentService:
 
     @transaction
     async def create_document(
-        self, attachment: UploadFile, folder: str | None = None, metadata: dict | None = None
+        self,
+        attachment: UploadFile,
+        folder: str | None = None,
+        metadata: dict | None = None,
+        overwrite: bool = False,
     ) -> Document:
         """
         Upload document to a channel.
@@ -195,6 +199,7 @@ class DocumentService:
         :param attachment: the file to upload
         :param folder: path of a target folder within a channel (can have multiple parts)
         :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
+        :param overwrite: allow to overwrite the document that already exists (if any)
         """
         assert attachment.filename
         assert attachment.content_type
@@ -204,6 +209,12 @@ class DocumentService:
 
         bucket = await self._file_storage.get_bucket()
         upload_path = self._get_upload_filepath(attachment.filename, folder)
+
+        if (
+            await self._file_storage.get_file_metadata(f"files/{bucket}/{upload_path}") is not None
+            and not overwrite
+        ):
+            raise InvalidRequestError("Operation will overwrite existing file, which is not allowed.")
 
         file_meta = await self._file_storage.put_file(
             bucket,
