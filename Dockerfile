@@ -15,7 +15,9 @@ FROM python:3.13-slim AS runner
 WORKDIR /opt/app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NUMBA_CACHE_DIR=/tmp/numba_cache \
+    DO_NOT_TRACK=true
 
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
@@ -24,6 +26,21 @@ RUN apt-get update && \
       libgthread-2.0 && \
     apt-get clean
 
+RUN python -m ensurepip --version && \
+    python -m pip uninstall -y pip setuptools wheel
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
+    uv pip install -r requirements.txt \
+      --index-strategy unsafe-best-match \
+      --system
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    python -m spacy download en_core_web_sm --system && \
+    python -m spacy download uk_core_news_sm --system
+
 # creates a non-root user with an explicit UID and adds permission to access the app folder
 # for more info, please refer to https://aka.ms/vscode-docker-python-configure-containers
 RUN adduser -u 1001 --disabled-password --gecos "" appuser && \
@@ -31,27 +48,13 @@ RUN adduser -u 1001 --disabled-password --gecos "" appuser && \
 
 USER appuser
 
-RUN mkdir ~/.cache
-
-RUN --mount=type=cache,target=/home/appuser/.cache/pip,uid=1001 \
-    --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
-    pip install -r requirements.txt --no-warn-script-location
-
-# download models
+# download embedding model
 ENV BGE_EMBEDDING_MODEL_PATH=/home/appuser/bge-small-en
 
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
 SentenceTransformer('epam/bge-small-en', device='cpu').save('$BGE_EMBEDDING_MODEL_PATH')"
 
-RUN python -m spacy download en_core_web_sm && \
-    python -m spacy download uk_core_news_sm
-
 COPY --chown=appuser ./src ./
-
-ENV NUMBA_CACHE_DIR=/tmp/numba_cache
-
-# disable usage tracking for unstructured
-ENV DO_NOT_TRACK=true
 
 CMD [ "python3", "main.py" ]
