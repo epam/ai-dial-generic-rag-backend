@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class ChannelCompletion(ChatCompletion):
-    _enable_debug_stages: bool = True
+    def __init__(self, *, enable_debug_stages: bool = False):
+        self._enable_debug_stages = enable_debug_stages
 
     async def chat_completion(self, request: Request, response: Response) -> None:
         """Chat completion entrypoint."""
