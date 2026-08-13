@@ -17,7 +17,7 @@ from generic_rag.components.retrieval.document_selector import (
 from generic_rag.components.search_index import ChunkIndex, tracer
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
-from generic_rag.types import AbstractAnswer, AnswerStage, AnyChunk, Document, RetrievedDocument, Retriever
+from generic_rag.types import Answer, AnswerStage, AnyChunk, Document, RetrievedDocument, Retriever
 from generic_rag.utils.answers import NoopStage
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
         self._sources: dict[int, Document] = {}
         """ cache of previously loaded sources """
 
-    async def invoke(self, query: str, answer: AbstractAnswer) -> list[RetrievedDocument]:
+    async def invoke(self, query: str, answer: Answer) -> list[RetrievedDocument]:
         """
         Retrieve pieces of information that are relevant to given query.
 

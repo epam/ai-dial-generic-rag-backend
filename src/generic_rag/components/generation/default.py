@@ -12,7 +12,7 @@ from generic_rag.channel import Channel
 from generic_rag.components.generation.prompts import DefaultGenerationPrompt
 from generic_rag.components.generation.utils import RawLlmOutputReporter, ReferencesParser
 from generic_rag.types import (
-    AbstractAnswer,
+    Answer,
     AnswerGenerator,
     ImageChunk,
     LlmConfig,
@@ -146,7 +146,7 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
         self._channel = channel
         self._model_provider = model_provider
 
-    async def invoke(self, query: str, retriever: Retriever, answer: AbstractAnswer):
+    async def invoke(self, query: str, retriever: Retriever, answer: Answer):
         """
         Generate answer to given user's query.
 

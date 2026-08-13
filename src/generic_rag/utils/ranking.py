@@ -21,14 +21,14 @@ async def rank_fusion[T](
     :param c: a constant added to the rank, controlling the balance between the importance
         of high-ranked items and the consideration given to lower-ranked items.
     """
+    if weights is None:
+        weights = [1 / len(doc_lists)] * len(doc_lists)
+
+    if len(doc_lists) != len(weights):
+        raise ValueError("Number of rank lists must be equal to the number of weights.")
 
     def _calculate() -> Sequence[T]:
-        nonlocal weights
-
-        if not weights:
-            weights = [1 / len(doc_lists)] * len(doc_lists)
-        if len(doc_lists) != len(weights):
-            raise ValueError("Number of rank lists must be equal to the number of weights.")
+        assert weights
 
         # associate each doc's content with its RRF score for later sorting by it
         # duplicated contents across retrievers are collapsed & scored cumulatively

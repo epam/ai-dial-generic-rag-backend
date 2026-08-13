@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, create_model
 from generic_rag.channel import Channel
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
-from generic_rag.types import AbstractAnswer, AnswerStage, ConfigurableComponent
+from generic_rag.types import Answer, AnswerStage, ConfigurableComponent
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Implements the logic of getting filters configuration to be used by :class:`DocumentSelector`."""
 
-    async def get_document_subset(self, answer: AbstractAnswer) -> list[int] | None:
+    async def get_document_subset(self, answer: Answer) -> list[int] | None:
         """
         Get a subset of documents to use for retrieval.
 

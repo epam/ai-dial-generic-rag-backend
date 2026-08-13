@@ -15,7 +15,7 @@ from PIL import Image
 from PIL.Image import Resampling
 
 from generic_rag.types import (
-    AbstractAnswer,
+    Answer,
     AnswerStage,
     FileStorage,
     ImageChunk,
@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 class NoopStage(AnswerStage):
+    """Stage that does nothing."""
+
     def __exit__(
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, tb: TracebackType | None
     ): ...
@@ -38,7 +40,9 @@ class NoopStage(AnswerStage):
     async def add_reference(self, citation_index: int, doc: RetrievedDocument): ...
 
 
-class PlainAnswer(AbstractAnswer):
+class PlainAnswer(Answer):
+    """Answer implementation which accumulates the content in plain string."""
+
     def __init__(self):
         self._content: str = ""
         self._has_references = False
@@ -70,7 +74,7 @@ class PlainAnswer(AbstractAnswer):
         # do nothing for now
 
 
-class SharingManager(AbstractAnswer):
+class SharingManager(Answer):
     """Answer implementation which automatically shares all returned references with the user."""
 
     class _LockManager:
@@ -84,12 +88,12 @@ class SharingManager(AbstractAnswer):
                 return self._storage[key]
 
     class _StageWrapper(AnswerStage):
-        def __init__(self, wrapped: AnswerStage, sharing_manager: "SharingManager"):
-            self._wrapped = wrapped
+        def __init__(self, wrapped_stage: AnswerStage, sharing_manager: "SharingManager"):
+            self._wrapped_stage = wrapped_stage
             self._sharing_manager = sharing_manager
 
         def __enter__(self) -> Self:
-            self._wrapped.__enter__()
+            self._wrapped_stage.__enter__()
             return self
 
         def __exit__(
@@ -98,32 +102,34 @@ class SharingManager(AbstractAnswer):
             exc_value: BaseException | None,
             tb: TracebackType | None,
         ):
-            self._wrapped.__exit__(exc_type, exc_value, tb)
+            self._wrapped_stage.__exit__(exc_type, exc_value, tb)
 
         def append_content(self, content: str):
-            self._wrapped.append_content(content)
+            self._wrapped_stage.append_content(content)
 
         async def add_citation(self, citation_index: int, doc: RetrievedDocument):
-            await self._wrapped.add_citation(citation_index, doc)
+            await self._wrapped_stage.add_citation(citation_index, doc)
 
         async def add_reference(self, citation_index: int, doc: RetrievedDocument):
-            await self._wrapped.add_reference(citation_index, await self._sharing_manager.share_document(doc))
+            await self._wrapped_stage.add_reference(
+                citation_index, await self._sharing_manager.share_document(doc)
+            )
 
     @inject
-    def __init__(self, wrapped: AbstractAnswer, *, file_storage: FileStorage = NotImplemented):
-        self._wrapped = wrapped
+    def __init__(self, wrapped_answer: Answer, *, file_storage: FileStorage = NotImplemented):
+        self._wrapped_answer = wrapped_answer
         self._file_storage = file_storage
         self._urls: dict[str, str] = {}
         self._lock_manager = self._LockManager()
 
     def __enter__(self) -> Self:
-        self._wrapped.__enter__()
+        self._wrapped_answer.__enter__()
         return self
 
     def __exit__(
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, tb: TracebackType | None
     ):
-        self._wrapped.__exit__(exc_type, exc_value, tb)
+        self._wrapped_answer.__exit__(exc_type, exc_value, tb)
 
     async def share_document(self, doc: RetrievedDocument) -> RetrievedDocument:
         async with await self._lock_manager.get(doc.source_url):
@@ -138,16 +144,16 @@ class SharingManager(AbstractAnswer):
         return doc.model_copy(update={"source_url": self._urls[doc.source_url]})
 
     def append_content(self, content: str):
-        self._wrapped.append_content(content)
+        self._wrapped_answer.append_content(content)
 
     async def add_citation(self, citation_index: int, doc: RetrievedDocument):
-        await self._wrapped.add_citation(citation_index, doc)
+        await self._wrapped_answer.add_citation(citation_index, doc)
 
     async def add_reference(self, citation_index: int, doc: RetrievedDocument):
-        await self._wrapped.add_reference(citation_index, await self.share_document(doc))
+        await self._wrapped_answer.add_reference(citation_index, await self.share_document(doc))
 
     def create_stage(self, name: str, *, debug: bool = False, timed: bool = True) -> AnswerStage:
-        stage = self._wrapped.create_stage(name, debug=debug, timed=timed)
+        stage = self._wrapped_answer.create_stage(name, debug=debug, timed=timed)
         if not isinstance(stage, NoopStage):
             return self._StageWrapper(stage, self)
         return stage
@@ -226,7 +232,7 @@ class DialStage(AnswerStage):
             self._stage.content_stream.write("")
 
 
-class DialAnswer(AbstractAnswer):
+class DialAnswer(Answer):
     def __init__(self, choice: Choice, *, enable_debug_stages: bool = True):
         self._choice = choice
         self._enable_debug_stages = enable_debug_stages

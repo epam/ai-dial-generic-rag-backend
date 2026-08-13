@@ -10,7 +10,7 @@ from pydantic_partial import create_partial_model
 
 from generic_rag.channel import Channel, RequestConfig
 from generic_rag.scope import ChannelBindings
-from generic_rag.types import AbstractAnswer, AnswerGenerator, Retriever
+from generic_rag.types import Answer, AnswerGenerator, Retriever
 from generic_rag.utils.answers import DialAnswer, SharingManager
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,7 @@ class ChannelCompletion(ChatCompletion):
                         raise InternalServerError(f"Unexpected error: {str(e)}") from e
 
     @staticmethod
-    async def _channel_completion(
-        answer: AbstractAnswer, request: Request, response: Response, channel: Channel
-    ):
+    async def _channel_completion(answer: Answer, request: Request, response: Response, channel: Channel):
         """Chat completion logic for specific channel."""
         with answer.create_stage("Request configuration", debug=True) as stage:
             request_config_model = await RequestConfig.get_dynamic_model()

@@ -1,10 +1,10 @@
-from generic_rag.types import AbstractAnswer, AnswerGenerator, Retriever
+from generic_rag.types import Answer, AnswerGenerator, Retriever
 
 
 class RetrievalOnlyAnswerGenerator(AnswerGenerator):
     """Returns all retrieval results as attachments without LLM invocation."""
 
-    async def invoke(self, query: str, retriever: Retriever, answer: AbstractAnswer):
+    async def invoke(self, query: str, retriever: Retriever, answer: Answer):
         """
         Generate answer to given user's query.
 

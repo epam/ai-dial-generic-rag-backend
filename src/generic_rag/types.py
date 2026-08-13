@@ -468,7 +468,7 @@ class RetrievedDocument(BaseModel):
 
 
 class AnswerStage(AbstractContextManager, ABC):
-    """Represents dedicated stage of RAG answer."""
+    """Represents intermediate stage of RAG answer."""
 
     @abstractmethod
     def append_content(self, content: str): ...
@@ -480,8 +480,8 @@ class AnswerStage(AbstractContextManager, ABC):
     async def add_reference(self, citation_index: int, doc: RetrievedDocument): ...
 
 
-class AbstractAnswer(AnswerStage, ABC):
-    """Represents the RAG answer itself."""
+class Answer(AnswerStage, ABC):
+    """Represents the final RAG answer."""
 
     @abstractmethod
     def create_stage(self, name: str, *, debug: bool = False, timed: bool = True) -> AnswerStage: ...
@@ -491,7 +491,7 @@ class Retriever[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], 
     """Top-level component responsible for retrieval of relevant chunks for further use."""
 
     @abstractmethod
-    async def invoke(self, query: str, answer: AbstractAnswer) -> list[RetrievedDocument]:
+    async def invoke(self, query: str, answer: Answer) -> list[RetrievedDocument]:
         """
         Retrieve pieces of information that are relevant to given query.
 
@@ -504,7 +504,7 @@ class AnswerGenerator[ConfigT: BaseModel = BaseModel](ConfigurableComponent[Conf
     """Component that generates answer to a user query."""
 
     @abstractmethod
-    async def invoke(self, query: str, retriever: Retriever, answer: AbstractAnswer):
+    async def invoke(self, query: str, retriever: Retriever, answer: Answer):
         """
         Generate answer to given user's query.
 
