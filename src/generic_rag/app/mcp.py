@@ -1,10 +1,12 @@
 import base64
 import enum
+import os
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NamedTuple, cast
 
+from annotated_types import Gt
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -42,6 +44,10 @@ from generic_rag.types import (
     TextChunk,
 )
 from generic_rag.utils.pagination import PaginatedResults, Pagination
+
+GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
+    os.getenv("MCP_GET_PAGES_LIMIT", "10"),
+)
 
 provider = LocalProvider()
 
@@ -167,6 +173,11 @@ class GetPagesTool(NamedTuple):
         """Returns the full content of specific document's page range (text, image, or both)."""
         if page_start > page_end:
             raise ValueError("'page_start' cannot be greater than 'page_end'")
+        if page_end - page_start > GET_PAGES_LIMIT:
+            raise ValueError(
+                f"you can request maximum {GET_PAGES_LIMIT} pages in single tool call "
+                f"({page_end - page_start} pages requested)"
+            )
 
         doc_pages = [(document_id, page_idx) for page_idx in range(page_start, page_end + 1)]
 
