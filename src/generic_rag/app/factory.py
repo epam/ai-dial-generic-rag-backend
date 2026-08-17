@@ -7,7 +7,6 @@ import aidial_sdk
 import fastapi
 from aidial_sdk import DIALApp
 from aidial_sdk.telemetry.types import MetricsConfig, TelemetryConfig, TracingConfig
-from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from injection import afind_instance, find_instance, set_constant
 from injection.loaders import load_packages
@@ -60,7 +59,6 @@ async def lifespan(app: DIALApp):
 
     async with AsyncExitStack() as exit_stack:
         set_constant(exit_stack)
-        set_constant(app, on=FastAPI)
 
         DbSessionMaker.configure(bind=await afind_instance(AsyncEngine))
 
@@ -75,7 +73,7 @@ async def lifespan(app: DIALApp):
         )
         app.add_embeddings(f"{APP_NAME}-embeddings", EmbeddingsEndpoint())
 
-        await setup_jobs()
+        await setup_jobs(app)
         await setup_mcp(app, exit_stack)
 
         yield

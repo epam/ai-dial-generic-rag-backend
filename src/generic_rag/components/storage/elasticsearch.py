@@ -18,6 +18,11 @@ from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
 
+if not logger.isEnabledFor(logging.DEBUG):
+    logging.getLogger("elastic_transport").setLevel(
+        logging.WARNING,
+    )
+
 
 class SearchHitTotal(BaseModel):
     """Metadata about the number of matching documents."""
