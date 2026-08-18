@@ -38,14 +38,31 @@ class AllDocumentsDocumentSelector(DocumentSelector):
 
 
 class ExactDocumentsDocumentSelectorConfig(BaseModel):
-    document_ids: list[int] = Field(min_length=1, description="IDs of documents to be used.")
+    @classmethod
+    @inject
+    async def get_dynamic_model(
+        cls, channel: Channel | None = None
+    ) -> type["ExactDocumentsDocumentSelectorConfig"]:
+        # document_ids should be available only in channel scope (during request execution)
+        if channel is not None:
+            # noinspection bad-return
+            return create_model(
+                cls.__name__,
+                __doc__=cls.__doc__,
+                __base__=(
+                    cls,
+                    BaseModel,
+                ),
+                document_ids=(list[int], Field(min_length=1, description="IDs of documents to be used.")),
+            )
+        return cls
 
 
 class ExactDocumentsDocumentSelector(DocumentSelector[ExactDocumentsDocumentSelectorConfig]):
     """Restrict search to specific documents."""
 
     async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
-        return self.config.document_ids
+        return getattr(self.config, "document_ids", None)
 
 
 class MetadataDocumentSelector[ConfigT: BaseModel = BaseModel](DocumentSelector[ConfigT], ABC):
