@@ -17,6 +17,7 @@ WORKDIR /opt/app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
+    FASTMCP_LOG_ENABLED=false \
     DO_NOT_TRACK=true
 
 RUN apt-get update && \

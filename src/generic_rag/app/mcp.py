@@ -1,9 +1,12 @@
 import base64
+import enum
+import os
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NamedTuple, cast
 
+from annotated_types import Gt
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -35,18 +38,24 @@ from generic_rag.types import (
     ChunkSource,
     ChunkType,
     Document,
+    ImageChunk,
     ImageType,
     Retriever,
     TextChunk,
 )
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 
+GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
+    os.getenv("MCP_GET_PAGES_LIMIT", "10"),
+)
+
 provider = LocalProvider()
 
 
+@enum.unique
 class ToolName(StrEnum):
     LIST_DOCUMENTS = "list_documents_unordered"
-    GET_PAGE = "get_page"
+    GET_PAGES = "get_pages"
     RETRIEVE_TEXT_CHUNKS = "retrieve_text_chunks"
     RAG_SEARCH = "rag_search"
 
@@ -62,8 +71,9 @@ class DocumentMetadata(BaseModel):
     @inject
     async def get_dynamic_model[T: DocumentMetadata](
         cls: type[T], metadata_service: MetadataService = NotImplemented
-    ):
+    ) -> type["DocumentMetadata"]:
         if filterable_fields := metadata_service.get_filterable_fields():
+            # noinspection bad-return
             return create_model(
                 cls.__name__,
                 __base__=cls,
@@ -146,45 +156,68 @@ class ListDocumentsTool(NamedTuple):
         return result.model_dump(exclude_unset=True)
 
 
-@provider.tool(name=ToolName.GET_PAGE, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+@provider.tool(name=ToolName.GET_PAGES, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 @asfunction
-class GetPageTool(NamedTuple):
+class GetPagesTool(NamedTuple):
     chunk_service: ChunkService
 
     async def __call__(
         self,
         document_id: Annotated[int, Field(description="ID of the document", ge=1)],
-        page_ix: Annotated[int, Field(description="Page index", ge=1)],
+        page_start: Annotated[int, Field(description="Start page of the document (1 based)", ge=1)],
+        page_end: Annotated[int, Field(description="End page of the document (1 based)", ge=1)],
         retrieve_type: Annotated[
             Literal["text", "image", "both"], Field(alias="type", description="Content type to retrieve")
         ] = "both",
     ) -> list[TextContent | ImageContent]:
-        """Returns the full content of a specific page (text, image, or both)."""
-        doc_pages = (document_id, page_ix)
-        result: list[TextContent | ImageContent] = []
-
-        if retrieve_type in {"text", "both"}:
-            text_chunks = await self.chunk_service.get_chunks_by_pages(doc_pages, chunk_type=ChunkType.text)
-            result.append(
-                TextContent(
-                    type="text",
-                    text="\n".join([chunk.text for chunk in text_chunks]),
-                )
+        """Returns the full content of specific document's page range (text, image, or both)."""
+        if page_start > page_end:
+            raise ValueError("'page_start' cannot be greater than 'page_end'")
+        if page_end - page_start > GET_PAGES_LIMIT:
+            raise ValueError(
+                f"you can request maximum {GET_PAGES_LIMIT} pages in single tool call "
+                f"({page_end - page_start} pages requested)"
             )
 
-        if retrieve_type in {"image", "both"}:
-            for chunk in await self.chunk_service.get_chunks_by_pages(doc_pages, chunk_type=ChunkType.image):
-                if chunk.image_type == ImageType.page:
-                    result.append(
-                        ImageContent(
-                            type="image",
-                            data=base64.b64encode(chunk.content).decode(),
-                            mimeType=chunk.mime_type,
-                        )
-                    )
-                    break
+        doc_pages = [(document_id, page_idx) for page_idx in range(page_start, page_end + 1)]
 
-        return result
+        match retrieve_type:
+            case "text":
+                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.text)
+            case "image":
+                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.image)
+            case "both":
+                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages)
+
+        text_content: dict[int, TextContent] = {}
+        image_content: dict[int, ImageContent] = {}
+
+        for chunk in chunks:
+            if isinstance(chunk, TextChunk):
+                assert chunk.page_number is not None
+                if content_block := text_content.get(chunk.page_number):
+                    content_block.text += "\n" + chunk.text
+                else:
+                    text_content[chunk.page_number] = TextContent(type="text", text=chunk.text)
+
+            elif isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page:
+                assert chunk.page_number is not None
+                image_content[chunk.page_number] = ImageContent(
+                    type="image", data=base64.b64encode(chunk.content).decode(), mimeType=chunk.mime_type
+                )
+
+        return list(self._get_result(document_id, text_content, image_content))
+
+    @staticmethod
+    def _get_result(
+        document_id: int, page_text: dict[int, TextContent], page_images: dict[int, ImageContent]
+    ):
+        for page_idx in sorted(set(page_text.keys()) | set(page_images.keys())):
+            yield TextContent(type="text", text=f"[Document {document_id}, Page {page_idx}]")
+            if content_block := page_text.get(page_idx):
+                yield content_block
+            if content_block := page_images.get(page_idx):
+                yield content_block
 
 
 class RetrievedChunk(BaseModel):
