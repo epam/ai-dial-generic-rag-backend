@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim-trixie AS builder
 
 WORKDIR /opt
 
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     poetry self add poetry-plugin-export && \
     poetry export -f requirements.txt --without-hashes --without dev > ./requirements.txt
 
-FROM python:3.13-slim AS runner
+FROM python:3.13-slim-trixie AS runner
 
 WORKDIR /opt/app
 
@@ -24,6 +24,8 @@ RUN apt-get update && \
       libmagic1 \
       libgl1 \
       libgthread-2.0 && \
+    apt-get satisfy -y \
+      "util-linux (>=2.41.5-0+deb13u1)" && \
     apt-get clean
 
 RUN python -m ensurepip --version && \
