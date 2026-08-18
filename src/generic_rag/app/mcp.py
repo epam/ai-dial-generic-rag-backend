@@ -172,10 +172,11 @@ class GetPagesTool(NamedTuple):
         """Returns the full content of specific document's page range (text, image, or both)."""
         if page_start > page_end:
             raise ValueError("'page_start' cannot be greater than 'page_end'")
-        if page_end - page_start > GET_PAGES_LIMIT:
+        requested_pages = page_end - page_start + 1
+        if requested_pages > GET_PAGES_LIMIT:
             raise ValueError(
                 f"you can request maximum {GET_PAGES_LIMIT} pages in single tool call "
-                f"({page_end - page_start} pages requested)"
+                f"({requested_pages} pages requested)"
             )
 
         doc_pages = [(document_id, page_idx) for page_idx in range(page_start, page_end + 1)]
