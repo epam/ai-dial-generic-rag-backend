@@ -107,21 +107,34 @@ class ChunkService:
         await get_current_session().flush()
 
     def get_chunks_by_document(self, document_id: int) -> AsyncIterable[AnyChunk]:
-        """Load chunks of given document."""
+        """
+        Load chunks of given document.
+
+        All text chunks are yielded first, then all image chunks, and within each of these two
+        groups the chunks come in indexing order. See `get_chunks_by_pages` for the assumption
+        that `chunk_id` encodes that order.
+        """
 
         @transaction
         async def _chunks_fetcher():
+            # `chunk_id` is the position of the chunk in the indexing stream, so ordering by it
+            # restores the order in which the parsers produced the chunks.
             text_entities: ScalarResult[TextChunkEntity] = await get_current_session().scalars(
-                select(TextChunkEntity).where(
+                select(TextChunkEntity)
+                .where(
                     TextChunkEntity.channel_key == self._channel_key,
                     TextChunkEntity.document_id == document_id,
                 )
+                .order_by(TextChunkEntity.chunk_id)
             )
             image_entities: ScalarResult[ImageChunkEntity] = await get_current_session().scalars(
-                select(ImageChunkEntity).where(
+                select(ImageChunkEntity)
+                .where(
                     ImageChunkEntity.channel_key == self._channel_key,
                     ImageChunkEntity.document_id == document_id,
                 )
+                # ordered by `chunk_id` for the same reason as the text chunks above
+                .order_by(ImageChunkEntity.chunk_id)
             )
             for entity in itertools.chain(text_entities, image_entities):
                 yield await self._convert_entity(entity)
@@ -217,6 +230,19 @@ class ChunkService:
         """
         Return chunks for given documents pages.
 
+        Chunks are returned grouped by document, and within a document in the order in which they
+        were indexed. Callers that concatenate the chunks of a page (for example to rebuild the
+        page text) depend on this ordering.
+
+        The ordering assumes that `chunk_id` is the sequential number of the chunk in the indexing
+        stream. `IndexingService._extract_chunks` guarantees this: it overrides the id assigned by
+        the parser with its own counter, which it increments by one for every chunk, in the order
+        the parsers yield them. Text and image chunks are numbered by two independent counters, so
+        the ordering is meaningful within each chunk type but says nothing about how chunks of
+        different types relate to each other. Note also that indexing order equals the document's
+        reading order only as long as parsers emit their chunks sequentially, which is what both
+        current parsers do.
+
         :param doc_pages: pairs of (document_id, page_number) describing required pages
         :param chunk_type: defines what types of chunks to return
         """
@@ -226,20 +252,27 @@ class ChunkService:
         tasks = []
 
         if not chunk_type or chunk_type == ChunkType.text:
+            # `chunk_id` is the position of the chunk in the indexing stream, so ordering by it
+            # restores the order in which the parsers produced the chunks.
             text_entities: ScalarResult[TextChunkEntity] = await get_current_session().scalars(
-                select(TextChunkEntity).where(
+                select(TextChunkEntity)
+                .where(
                     TextChunkEntity.channel_key == self._channel_key,
                     tuple_(TextChunkEntity.document_id, TextChunkEntity.page_number).in_(doc_pages),
                 )
+                .order_by(TextChunkEntity.document_id, TextChunkEntity.chunk_id)
             )
             tasks.extend(self._convert_entity(entity) for entity in text_entities.all())
 
         if not chunk_type or chunk_type == ChunkType.image:
             image_entities: ScalarResult[ImageChunkEntity] = await get_current_session().scalars(
-                select(ImageChunkEntity).where(
+                select(ImageChunkEntity)
+                .where(
                     ImageChunkEntity.channel_key == self._channel_key,
                     tuple_(ImageChunkEntity.document_id, ImageChunkEntity.page_number).in_(doc_pages),
                 )
+                # ordered by `chunk_id` for the same reason as the text chunks above
+                .order_by(ImageChunkEntity.document_id, ImageChunkEntity.chunk_id)
             )
             tasks.extend(self._convert_entity(entity) for entity in image_entities.all())
 
