@@ -1,6 +1,6 @@
 import base64
-import itertools
 import enum
+import itertools
 import os
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
