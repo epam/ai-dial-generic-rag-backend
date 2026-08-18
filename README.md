@@ -97,6 +97,7 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 | `ELASTICSEARCH_USERNAME` | No | Elasticsearch user for authentication |  |  |
 | `ELASTICSEARCH_PASSWORD` | No | Elasticsearch password for authentication |  |  |
 | `ELASTICSEARCH_INDEX_PREFIX` | No | The prefix that will be added to all indexes created in Elasticsearch |  |  |
+| `ENABLE_DEBUG_STAGES` | No | Enable debug stages reporting | `yes`/`true`/`1`, `no`/`false`/`0` | `no` |
 
 > [!NOTE]
 > * you should either set `DB_PASSWORD` (to use password authentication) enable MSI by setting `DB_MSI_ENABLED` to `yes`;

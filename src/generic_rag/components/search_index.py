@@ -152,7 +152,7 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
         return self._storage
 
 
-class ChunkIndex[IndexT: TextType | VectorType, IndexerConfigT: BaseModel](Index[IndexT]):
+class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
     """Index allowing relevance search on top of document chunks."""
 
     @log_execution_time(logger)

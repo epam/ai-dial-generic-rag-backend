@@ -67,7 +67,12 @@ async def lifespan(app: DIALApp):
         await asyncio.to_thread(apply_migrations, settings.database)
         await setup_routes(app)
 
-        app.add_chat_completion(APP_NAME, ChannelCompletion())
+        app.add_chat_completion(
+            APP_NAME,
+            ChannelCompletion(
+                enable_debug_stages=settings.enable_debug_stages,
+            ),
+        )
         app.add_embeddings(f"{APP_NAME}-embeddings", EmbeddingsEndpoint())
 
         await setup_jobs()

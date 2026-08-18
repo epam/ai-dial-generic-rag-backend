@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Self, cast
+from typing import cast
 
 from injection import inject
 from pydantic import BaseModel, Field, create_model
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, create_model
 from generic_rag.channel import Channel
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
-from generic_rag.types import ConfigurableComponent, RetrievalStageListener
+from generic_rag.types import Answer, AnswerStage, ConfigurableComponent
 
 logger = logging.getLogger(__name__)
 
@@ -16,34 +16,24 @@ logger = logging.getLogger(__name__)
 class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Implements the logic of getting filters configuration to be used by :class:`DocumentSelector`."""
 
-    _listener: RetrievalStageListener = RetrievalStageListener()
-
-    async def get_document_subset(self) -> list[int] | None:
+    async def get_document_subset(self, answer: Answer) -> list[int] | None:
         """
         Get a subset of documents to use for retrieval.
 
+        :param answer: the current answer (to report retrieval stages execution)
         :return: list of document IDs, or special marker `None` if all available documents should be used.
         """
-        async with self._listener.begin("Document selector"):
-            try:
-                return await self._get_document_subset()
-            except Exception as e:
-                await self._listener.on_error(e)
-                raise
+        with answer.create_stage("Document selector") as stage:
+            return await self._get_document_subset(stage)
 
     @abstractmethod
-    async def _get_document_subset(self) -> list[int] | None: ...
-
-    def use_listener(self, listener: RetrievalStageListener) -> Self:
-        """Use given retrieval event listener."""
-        self._listener = listener
-        return self
+    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None: ...
 
 
 class AllDocumentsDocumentSelector(DocumentSelector):
     """Always use all available documents."""
 
-    async def _get_document_subset(self) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
         return None
 
 
@@ -71,7 +61,7 @@ class ExactDocumentsDocumentSelectorConfig(BaseModel):
 class ExactDocumentsDocumentSelector(DocumentSelector[ExactDocumentsDocumentSelectorConfig]):
     """Restrict search to specific documents."""
 
-    async def _get_document_subset(self) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
         return getattr(self.config, "document_ids", None)
 
 
@@ -84,22 +74,22 @@ class MetadataDocumentSelector[ConfigT: BaseModel = BaseModel](DocumentSelector[
         self._channel_key = channel.channel_key
 
     @transaction
-    async def _get_document_subset(self) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
         matcher_config = await self._get_matcher_config()
 
         if (query := DocumentMatcher(self._channel_key, matcher_config).get_query()) is None:
-            self._listener.log_message("Use all available documents.")
+            stage.append_content("Use all available documents.\n\n")
             return None
 
-        self._listener.log_message(
-            f"Provided configuration:\n```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```"
+        stage.append_content(
+            f"Provided configuration:\n```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```\n\n"
         )
 
         async with get_current_session() as session:
             cursor = await session.scalars(query)
             result = list(cursor.all())
 
-        self._listener.log_message(f"Found {len(result)} matching document(s).")
+        stage.append_content(f"Found {len(result)} matching document(s).\n\n")
 
         return result
 

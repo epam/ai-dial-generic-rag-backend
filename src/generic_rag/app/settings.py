@@ -107,6 +107,7 @@ class ApplicationSettings(BaseModel):
     in_memory_cache: InMemoryCacheSettings = InMemoryCacheSettings()
     database: DatabaseConfig = Field(..., description="Configuration for postgres/vector database connection")
     elasticsearch: ElasticsearchSettings | None = Field(None, description="Elasticsearch settings")
+    enable_debug_stages: bool = Field(False, description="enable debug stages reporting")
 
 
 def get_app_settings() -> ApplicationSettings:
@@ -134,6 +135,7 @@ def get_app_settings() -> ApplicationSettings:
         }
         if os.getenv("ELASTICSEARCH_URL")
         else None,
+        "enable_debug_stages": os.getenv("ENABLE_DEBUG_STAGES", "no"),
     }
     try:
         return ApplicationSettings.model_validate(raw_config)

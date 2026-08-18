@@ -1,10 +1,11 @@
 import base64
 import enum
+import itertools
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
-from typing import Annotated, Any, Literal, NamedTuple, cast
+from typing import Annotated, Any, Literal, NamedTuple, Self
 
 from annotated_types import Gt
 from fastapi import FastAPI
@@ -15,7 +16,6 @@ from fastmcp.server.transforms import Transform
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 from injection import asfunction, inject
-from langchain_core.documents import Document as LangchainDocument
 from mcp import types as mt
 from mcp.types import ImageContent, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, create_model
@@ -32,17 +32,16 @@ from generic_rag.services.document_service import DocumentService
 from generic_rag.services.document_stats_service import DocumentStats, DocumentStatsService
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.types import (
-    AnswerCallback,
     AnswerGenerator,
-    AnyChunk,
-    ChunkSource,
     ChunkType,
     Document,
     ImageChunk,
     ImageType,
+    RetrievedDocument,
     Retriever,
     TextChunk,
 )
+from generic_rag.utils.answers import PlainAnswer
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 
 GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
@@ -224,41 +223,27 @@ class RetrievedChunk(BaseModel):
     document_id: Annotated[int, Field(description="`id` of related document")]
     chunk_id: Annotated[int, Field(description="`id` of chunk within the document")]
     text: Annotated[str, Field(description="text of retrieved chunk")]
-    page_number: Annotated[int | None, Field(description="number of page where this chunk was extracted")] = (
-        None
-    )
+    page_number: Annotated[int, Field(description="number of page where this chunk was extracted")]
     metadata: Annotated[dict | None, Field(description="metadata of related document", default_factory=dict)]
 
     @classmethod
-    def create[T: RetrievedChunk](
-        cls: type[T],
-        chunks: list[AnyChunk],
-        metadata_field_names: set[str] | None = None,
-    ) -> T | None:
-        for chunk in chunks:
+    def create(cls, doc: RetrievedDocument, metadata_field_names: set[str] | None = None) -> Iterable[Self]:
+        for chunk in doc.chunks:
             if isinstance(chunk, TextChunk):
-                chunk_source = ChunkSource.from_chunk(chunk)
-                metadata = chunk_source.source_metadata
-                if metadata_field_names is not None:
-                    metadata = {k: v for k, v in metadata.items() if k in metadata_field_names}
-                return cls(
+                yield cls(
                     document_id=chunk.document_id,
                     chunk_id=chunk.chunk_id,
                     text=chunk.text,
                     page_number=chunk.page_number,
-                    metadata=metadata,
+                    metadata=(
+                        {k: v for k, v in doc.source_metadata.items() if k in metadata_field_names}
+                        if metadata_field_names is not None
+                        else doc.source_metadata
+                    ),
                 )
             # NOTE: don't include image chunks -
             # they bloat the context and likely don't bring much value.
             # we expose get_page tool with image mode.
-            # we can re-enable image chunks retrieval later if needed.
-            # if (
-            #     isinstance(chunk, ImageChunk) and
-            #     chunk.image_type == ImageType.page and
-            #     result is not None
-            # ):
-            #     result.page_image = chunk.content
-        return None
 
 
 def _get_retriever_overrides(document_ids: list[int] | None, metadata_filter: dict[str, Any] | None):
@@ -314,40 +299,12 @@ class DataRetrievalTool(NamedTuple):
         retriever = Retriever.create(request_config.retriever)
         metadata_field_names = self.metadata_service.get_mcp_retrieve_chunks_field_names()
 
-        return [
-            retrieved_chunk
-            for doc in await retriever.invoke(query)
-            if (
-                retrieved_chunk := RetrievedChunk.create(
-                    doc.metadata.get("chunks", []),
-                    metadata_field_names=metadata_field_names,
-                )
-            )
-            is not None
-        ]
-
-
-class SearchToolAnswerCallback(AnswerCallback):
-    def __init__(self):
-        self._content: str = ""
-        self._has_references = False
-
-    @property
-    def content(self):
-        return self._content
-
-    @property
-    def has_references(self) -> bool:
-        return self._has_references
-
-    def append_content(self, content: str):
-        self._content += content
-
-    def append_reference(self, reference_index: int, retrieved_doc: LangchainDocument):
-        if chunks := cast(list[AnyChunk], retrieved_doc.metadata.get("chunks", [])):
-            chunk = chunks[0]
-            self.append_content(f"[{chunk.document_id, chunk.page_number}]")
-            self._has_references = True
+        return list(
+            itertools.chain(*[
+                RetrievedChunk.create(doc, metadata_field_names)
+                for doc in await retriever.invoke(query, PlainAnswer())
+            ])
+        )
 
 
 _SEARCH_QUERY_DESCRIPTION = """\
@@ -397,12 +354,12 @@ class SearchTool(NamedTuple):
 
         retriever = Retriever.create(request_config.retriever)
         answer_generator = AnswerGenerator.create(request_config.generation)
-        callback = SearchToolAnswerCallback()
+        answer = PlainAnswer()
 
-        await answer_generator.invoke(query, retriever, callback)
+        await answer_generator.invoke(query, retriever, answer)
 
-        text = callback.content
-        if not callback.has_references:
+        text = answer.content
+        if not answer.has_references:
             text += "\n\nNo references found"
         return TextContent(type="text", text=text)
 
