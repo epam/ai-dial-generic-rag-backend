@@ -21,13 +21,26 @@ class PageExtractorConfig(BaseModel):
 
 
 class PageExtractor(DocumentParser[PageExtractorConfig]):
-    """Parser that extracts images of document pages."""
+    """Parser that extracts images of document pages.
+
+    Applies to PDF documents only. A channel can be configured with several parsers and hold
+    documents of several types, so anything else is skipped rather than failed: the other
+    parsers still have chunks to contribute, and one document that has no pages to render must
+    not leave the whole document unindexed.
+    """
 
     async def extract_chunks(self, document: Document) -> AsyncIterable[ImageChunk]:
         return self._extract_chunks_gen(document)
 
     @log_execution_time(logger)
     async def _extract_chunks_gen(self, document: Document) -> AsyncGenerator[ImageChunk]:
+        if document.mime_type != "application/pdf":
+            logger.info(
+                f"skipping '{document.display_name}': page images are extracted from PDF only, "
+                f"got '{document.mime_type}'"
+            )
+            return
+
         document_content = await document.get_content()
 
         with pdfplumber.open(io.BytesIO(document_content)) as pdf:
