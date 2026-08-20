@@ -47,7 +47,7 @@ def validate_content_type(content_type: str) -> None:
 
     :param content_type: the content type the document is being uploaded with
     """
-    media_type = content_type.split(";")[0].strip().lower()
+    media_type = content_type.split(";", maxsplit=1)[0].strip().lower()
     if media_type not in SUPPORTED_CONTENT_TYPES:
         supported = ", ".join(sorted(SUPPORTED_CONTENT_TYPES))
         raise InvalidRequestError(f"'{content_type}': unsupported file type (supported: {supported})")
