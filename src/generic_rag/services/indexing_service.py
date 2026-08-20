@@ -10,6 +10,7 @@ from generic_rag.scope import ScopeName
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.types import AnyChunk, Document, DocumentStatus, ImageChunk, TextChunk
+from generic_rag.utils.iterables import batched_async
 from generic_rag.utils.profile import log_execution_time
 
 INDEXING_BATCH_SIZE = 1000  # todo: get from config
@@ -84,12 +85,18 @@ class IndexingService:
                     if index_names is None or idx.index_name in index_names:
                         task_group.create_task(idx.storage.remove(document.id))
 
-            await self._index_chunks(
-                self._chunk_service.get_chunks_by_document(
-                    document.id,
-                ),
-                index_names=index_names,
-            )
+            async with TaskGroup() as task_group:
+                task_group.create_task(
+                    self._index_chunks(
+                        self._chunk_service.get_chunks_by_document(document.id),
+                        index_names=index_names,
+                    )
+                )
+                for idx in await self._channel.get_indexes("document"):
+                    if index_names is None or idx.index_name in index_names:
+                        task_group.create_task(
+                            idx.add([document]),
+                        )
 
     @log_execution_time(logger)
     async def _extract_chunks(self, document: Document) -> AsyncGenerator[AnyChunk]:
@@ -123,23 +130,8 @@ class IndexingService:
         :param chunks: iterable of chunks to index
         :param index_names: list of index names to update
         """
-        batch = []
-        batch_number = 0
-
-        async def _process_batch():
-            logger.info(f"processing batch: #{batch_number}")
-
+        async for batch in batched_async(chunks, INDEXING_BATCH_SIZE):
             async with TaskGroup() as task_group:
-                for index in await self._channel.get_indexes():
-                    if index_names is None or index.index_name in index_names:
-                        task_group.create_task(index.add(batch))
-
-        async for chunk in chunks:
-            batch.append(chunk)
-            if len(batch) >= INDEXING_BATCH_SIZE:
-                await _process_batch()
-                batch = []
-                batch_number += 1
-
-        if batch:
-            await _process_batch()
+                for idx in await self._channel.get_indexes("chunk"):
+                    if index_names is None or idx.index_name in index_names:
+                        task_group.create_task(idx.add(batch))

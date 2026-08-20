@@ -33,17 +33,19 @@ class AbstractRetrieverRequest(BaseModel, ABC):
 
     @classmethod
     async def get_dynamic_model(cls, channel: Channel) -> type["AbstractRetrieverRequest"]:
+        indexes = await channel.get_indexes("chunk")
+
         # noinspection PyTypedDict
         top_k_fields = {
             idx.index_name: Annotated[
                 NotRequired[NonNegativeInt],
                 Field(description=f"Maximum number of results to be returned by `{idx.index_name}` index."),
             ]
-            for idx in await channel.get_indexes()
+            for idx in indexes
         }
         # noinspection PyTypedDict
         top_k_model = TypedDict(AbstractRetrieverRequest.__name__ + "TopK", top_k_fields)
-        top_k_default = {idx.index_name: idx.default_limit for idx in await channel.get_indexes()}
+        top_k_default = {idx.index_name: idx.default_limit for idx in indexes}
 
         return create_model(
             cls.__name__,
@@ -147,7 +149,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
                         self._index_search(query, index, top_k, documents),
                     )
                 )
-                for index in await self._channel.get_indexes()
+                for index in await self._channel.get_indexes("chunk")
                 if (top_k := (request_config.top_k.get(index.index_name) or 0))
             ]
             if tasks:

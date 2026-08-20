@@ -294,9 +294,9 @@ class ChunkService:
             )
         if isinstance(entity, ImageChunkEntity):
             async with _semaphore:
-                image_content = b"".join([
-                    data async for data in await self._file_storage.download_file(entity.image_url)
-                ])
+                stream = await self._file_storage.download_file(entity.image_url)
+                assert stream is not None
+                image_content = b"".join([data async for data in stream])
             return ImageChunk(
                 document_id=entity.document_id,
                 chunk_id=entity.chunk_id,

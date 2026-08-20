@@ -4,8 +4,9 @@ import itertools
 import json
 import logging
 from abc import ABC
+from collections.abc import Collection
 from functools import cached_property
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self, overload
 
 import jsonschema.validators
 from annotated_types import MinLen
@@ -13,11 +14,11 @@ from fastapi.encoders import jsonable_encoder
 from injection import afind_instance
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     TypeAdapter,
     ValidationError,
-    conlist,
     create_model,
     field_validator,
 )
@@ -26,7 +27,7 @@ from pydantic.fields import FieldInfo
 from pydantic.v1.utils import deep_update
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
-from generic_rag.components.search_index import ChunkIndex, Index, IndexConfig
+from generic_rag.components.search_index import ChunkIndex, DocumentIndex, Index, IndexConfig
 from generic_rag.types import (
     AnswerGenerator,
     DocumentParser,
@@ -94,7 +95,14 @@ class ProcessingConfig(BaseModel, ABC):
     @classmethod
     async def get_dynamic_model[T: ProcessingConfig](cls: type[T]) -> type[T]:
         document_parser_config_model = await DocumentParser.get_aggregated_config_model()
-        index_config_model = await Index.get_aggregated_config_model(default_impl=ChunkIndex)
+        index_config_model = await Index.get_aggregated_config_model()
+
+        def _set_default_index_type(data: Any):
+            if isinstance(data, dict):
+                for value in data.values():
+                    if isinstance(value, dict) and "type" not in value:
+                        value["type"] = ChunkIndex.get_qualifier()
+            return data
 
         # noinspection PyTypeHints,PyTypeChecker
         return create_model(
@@ -102,9 +110,9 @@ class ProcessingConfig(BaseModel, ABC):
             __base__=cls,
             __doc__=cls.__doc__,
             parsers=Annotated[
-                conlist(document_parser_config_model, min_length=1),  # type: ignore
+                list[document_parser_config_model],
                 Field(
-                    ...,
+                    default_factory=list,
                     description=(
                         "List of parsers to use for extracting chunks from documents uploaded to the channel."
                     ),
@@ -123,6 +131,7 @@ class ProcessingConfig(BaseModel, ABC):
                 ],
                 MinLen(1),
                 Field(description="Configuration of indexes for relevance search."),
+                BeforeValidator(_set_default_index_type),
             ],
         )
 
@@ -214,7 +223,7 @@ class Channel:
     def __init__(self, channel_key: str, channel_config: ChannelConfig):
         self._channel_key = channel_key
         self._config = channel_config
-        self._indexes: list[ChunkIndex] | None = None
+        self._indexes: tuple[Index] | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -234,7 +243,7 @@ class Channel:
             itertools.chain(
                 *(parser.supported_mime_types for parser in self.document_parsers),
             )
-        )
+        ) or frozenset({"*/*"})
 
     @cached_property
     def document_parsers(self) -> list[DocumentParser]:
@@ -249,7 +258,14 @@ class Channel:
                 )
         return result
 
-    async def get_indexes(self) -> list[ChunkIndex]:
+    @overload
+    async def get_indexes(self, type_: Literal["chunk"]) -> Collection[ChunkIndex]: ...
+    @overload
+    async def get_indexes(self, type_: Literal["document"]) -> Collection[DocumentIndex]: ...
+    @overload
+    async def get_indexes(self, type_: Literal["all"] = "all") -> Collection[Index]: ...
+
+    async def get_indexes(self, type_: Literal["chunk", "document", "all"] = "all") -> Collection[Index]:
         """Get indexes configured for this channel."""
         async with self._lock:
             if self._indexes is None:
@@ -257,9 +273,16 @@ class Channel:
                     Index.create_async(config, channel_key=self._channel_key, index_name=name)
                     for name, config in self._config.indexes.items()
                 ]
-                self._indexes = list(await asyncio.gather(*tasks))
+                self._indexes = tuple(await asyncio.gather(*tasks))
 
         assert self._indexes is not None
+
+        match type_:
+            case "chunk":
+                return tuple(idx for idx in self._indexes if isinstance(idx, ChunkIndex))
+            case "document":
+                return tuple(idx for idx in self._indexes if isinstance(idx, DocumentIndex))
+
         return self._indexes
 
     @cached_property

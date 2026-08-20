@@ -37,7 +37,7 @@ def validate_content_type(content_type: str, supported_content_types: frozenset)
     :param supported_content_types: set of allowed content types
     """
     media_type = content_type.split(";", maxsplit=1)[0].strip().lower()
-    if media_type not in supported_content_types:
+    if media_type not in supported_content_types and "*/*" not in supported_content_types:
         supported = ", ".join(sorted(supported_content_types))
         raise InvalidRequestError(
             f"'{content_type}': unsupported file type (supported: {supported})",
@@ -158,24 +158,23 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
 
 
 class _Document(Document):
-    content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes] | None]] = Field(
-        ..., repr=False, exclude=True
-    )
+    content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes]]] = Field(repr=False, exclude=True)
 
-    async def get_content_stream(self) -> AsyncIterable[bytes] | None:
-        if stream := await self.content_fetcher():
-            return stream
-        return None
+    async def get_content_stream(self) -> AsyncIterable[bytes]:
+        return await self.content_fetcher()
 
     @classmethod
     def from_entity(cls, entity: DocumentEntity, file_storage: FileStorage) -> Self:
+        document_id = entity.document_id
         content_url = entity.url
 
-        async def content_fetcher() -> AsyncIterable[bytes] | None:
-            return await file_storage.download_file(content_url)
+        async def content_fetcher() -> AsyncIterable[bytes]:
+            if stream := await file_storage.download_file(content_url):
+                return stream
+            raise RuntimeError(f"Unable to download content of {document_id=} from {content_url}")
 
         return cls(
-            id=entity.document_id,
+            id=document_id,
             display_name=entity.display_name,
             mime_type=entity.mime_type,
             size=entity.size,

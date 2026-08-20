@@ -24,6 +24,7 @@ from datauri import DataURI
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from pydantic import BaseModel, BeforeValidator, ByteSize, ConfigDict, Field, create_model
 from pydantic_core import PydanticUndefined
+from starlette.datastructures import MultiDict
 
 from generic_rag.utils.generics import resolve_generic_arg
 
@@ -130,14 +131,12 @@ class Document(BaseModel, ABC):
     )
     status: DocumentStatus = Field(..., description="the status of this document processing")
 
-    async def get_content(self) -> bytes | None:
+    async def get_content(self) -> bytes:
         """Returns the document's content."""
-        if (stream := await self.get_content_stream()) is not None:
-            return b"".join([chunk async for chunk in stream])
-        return None
+        return b"".join([chunk async for chunk in await self.get_content_stream()])
 
     @abstractmethod
-    async def get_content_stream(self) -> AsyncIterable[bytes] | None:
+    async def get_content_stream(self) -> AsyncIterable[bytes]:
         """Returns async iterable on chunks of the document's content."""
 
 
@@ -240,10 +239,29 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
     @classmethod
     def create[T: ConfigurableComponent](cls: type[T], config: ConfigT, **kwargs) -> T:
         """Create instance of this component for given configuration."""
-        for implementation in cls.get_implementations():
-            if isinstance(config, implementation.get_config_model()):
-                return implementation(config, **kwargs)
-        raise RuntimeError(f"unable to find {cls.__name__} implementation for provided config: {config!r}")
+        candidates = [
+            impl for impl in cls.get_implementations() if isinstance(config, impl.get_config_model())
+        ]
+        if len(candidates) == 1:
+            return candidates[0](config, **kwargs)
+        if len(candidates) > 1:
+            # noinspection bad-argument-type
+            config_map = MultiDict((impl.get_config_model(), impl) for impl in candidates)
+            for t in type(config).mro():
+                if t in config_map:
+                    best_match = config_map.getlist(t)
+                    if len(best_match) == 1:
+                        return best_match[0](config, **kwargs)
+                    break  # best_match is still ambiguous, give up to raise an exception
+            raise RuntimeError(
+                f"More than one '{cls.__name__}' implementations match the config: "
+                f"{config.model_dump_json(indent=2)},\n"
+                f"candidates: {[impl.__name__ for impl in candidates]}"
+            )
+        raise RuntimeError(
+            f"Unable to find '{cls.__name__}' implementation for provided config: "
+            f"{config.model_dump_json(indent=2)}"
+        )
 
     @classmethod
     @cache
@@ -256,7 +274,7 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
                 # each component should have its own unique model class for config; otherwise, the logic
                 # of selecting implementation based on the type of actual config instance will be broken
                 return create_model(cls.__name__ + "Default", __base__=BaseModel)
-            if issubclass(result, BaseModel):
+            if isinstance(result, type) and issubclass(result, BaseModel):
                 return result
         raise RuntimeError(f"unable to determine configuration model type for {cls}")
 

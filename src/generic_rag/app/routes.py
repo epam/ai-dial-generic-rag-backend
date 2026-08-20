@@ -218,13 +218,8 @@ async def download_document_content(
     document = await document_service.get_document(document_id)
     content_stream = await document.get_content_stream()
 
-    if content_stream is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Unable to download document '{document_id}'.",
-        )
-
     filename = quote(os.path.basename(document.display_name))
+
     return StreamingResponse(
         content=content_stream,
         media_type=document.mime_type,
@@ -255,6 +250,7 @@ async def export_document_data(
 
     name, _ = os.path.splitext(os.path.basename(document.display_name))
     filename = quote(f"{document_id}_{name}.msgpack")
+
     return StreamingResponse(
         content=_content_stream(),
         media_type="application/vnd.msgpack",
