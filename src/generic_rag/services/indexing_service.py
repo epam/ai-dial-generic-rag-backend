@@ -59,7 +59,7 @@ class IndexingService:
         self, document: Document, *, index_names: set[str] | None = None, force: bool = False
     ):
         """
-        Index or reindex document with given ID.
+        Index or reindex given document.
 
         :param document: document to index
         :param index_names: names of indexes to update (if not defined - all indexes will be updated)

@@ -1,12 +1,18 @@
+import asyncio
+import json
 import logging
 import os
-from collections.abc import AsyncGenerator, Iterable
-from io import BytesIO
-from typing import Annotated, Any, Literal
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Sequence
+from io import BytesIO, FileIO
+from pathlib import PosixPath
+from typing import Annotated, Any, BinaryIO, Literal
+from zipfile import ZIP_DEFLATED, ZipFile
 
+import anyio
 from fastapi import UploadFile
 from injection import scoped
-from msgpack import packb, unpackb
+from msgpack import pack, unpack
+from opentelemetry.trace import get_tracer
 from pydantic import BaseModel, Field, RootModel
 from starlette.datastructures import Headers
 
@@ -14,9 +20,11 @@ from generic_rag.channel import Channel
 from generic_rag.scope import ScopeName
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
-from generic_rag.types import AnyChunk, Document, DocumentStatus, IndexRecord
+from generic_rag.types import AnyChunk, Document, DocumentStatus, FileMetadata, FileStorage, IndexRecord
+from generic_rag.utils.pagination import Pagination
 from generic_rag.utils.profile import log_execution_time
 
+tracer = get_tracer(__name__)
 logger = logging.getLogger(__name__)
 
 
@@ -56,14 +64,26 @@ class SerializedChunk(RootModel[Annotated[AnyChunk, Field(discriminator="chunk_t
 
 @scoped(ScopeName.channel)
 class ExportService:
-    def __init__(self, channel: Channel, document_service: DocumentService, chunk_service: ChunkService):
+    def __init__(
+        self,
+        channel: Channel,
+        document_service: DocumentService,
+        chunk_service: ChunkService,
+        file_storage: FileStorage,
+    ):
         self._channel = channel
         self._document_service = document_service
         self._chunk_service = chunk_service
+        self._file_storage = file_storage
 
     @log_execution_time(logger)
-    async def export_document(self, document: Document) -> bytes:
-        """Export given document and its related data."""
+    async def export_document(self, document: Document, stream: BinaryIO):
+        """
+        Export given document and its data.
+
+        :param document: the document to export
+        :param stream: binary stream to write data
+        """
         logger.info(f"exporting document '{document.display_name}'")
 
         chunks = [chunk async for chunk in self._chunk_service.get_chunks_by_document(document.id)]
@@ -74,17 +94,73 @@ class ExportService:
 
         document_record = await DocumentRecord.create(document, chunks, indexes)
 
-        return packb(document_record.model_dump())
+        return await asyncio.to_thread(pack, document_record.model_dump(), stream)
 
     @log_execution_time(logger)
-    async def import_document(self, document_data: bytes, overwrite: bool = False) -> Document:
-        """
-        Import document and its related data.
+    async def export_channel(self, archive_path: str) -> FileMetadata:
+        """Export channel's content as single archive uploaded to a file storage."""
+        async with anyio.TemporaryDirectory(prefix="export_") as workdir:
+            local_path = os.path.join(workdir, PosixPath(archive_path).name)
 
-        :param document_data: serialized instance of DocumentRecord
+            with ZipFile(local_path, "w", compression=ZIP_DEFLATED) as zip_file:
+                await asyncio.to_thread(
+                    zip_file.writestr,
+                    "_channel.json",
+                    json.dumps(self._channel.dump_config(), indent=2),
+                )
+
+                async for batch in _async_batched(_iter_documents(self._document_service), batch_size=10):
+                    await self._export_to_zip_file(batch, zip_file)
+
+            bucket = await self._file_storage.get_bucket()
+
+            with FileIO(local_path, "rb") as stream:
+                logger.info(f"uploading archive as '{archive_path}'")
+                return await self._file_storage.put_file(
+                    bucket,
+                    filepath=archive_path,
+                    content_type="application/zip",
+                    content=stream,
+                )
+
+    async def _export_to_zip_file(self, documents: Iterable[Document], zip_file: ZipFile):
+        """Export given batch of documents into provided Zip archive."""
+        async with anyio.TemporaryDirectory(prefix="batch_") as workdir:
+
+            @tracer.start_as_current_span("export-document")
+            async def _export_task(doc: Document) -> str:
+                name, _ = os.path.splitext(os.path.basename(doc.display_name))
+                with FileIO(
+                    os.path.join(
+                        workdir,
+                        os.path.join(workdir, f"{doc.id}_{name}.msgpack"),
+                    ),
+                    "wb",
+                ) as stream:
+                    await self.export_document(doc, stream)
+                    return stream.name
+
+            tasks = [asyncio.create_task(_export_task(doc)) for doc in documents]
+
+            for filepath in await asyncio.gather(*tasks):
+                logger.info(f"appending '{filepath}' to the archive")
+                await asyncio.to_thread(
+                    zip_file.write,
+                    filepath,
+                    arcname=os.path.basename(filepath),
+                )
+
+    @log_execution_time(logger)
+    async def import_document(self, stream: BinaryIO, overwrite: bool = False) -> Document:
+        """
+        Import document and its data.
+
+        :param stream: binary stream with serialized data of DocumentRecord
         :param overwrite: allow to overwrite the document that already exists (if any)
         """
-        record = DocumentRecord.model_validate(unpackb(document_data))
+        record = DocumentRecord.model_validate(
+            await asyncio.to_thread(unpack, stream),
+        )
 
         logger.info(f"importing document '{os.path.join(record.folder, record.filename)}'")
 
@@ -129,3 +205,29 @@ class ExportService:
         logger.info(f"successfully imported document '{record.filename}' as '{document.id}'")
 
         return await self._document_service.get_document(document.id)
+
+
+async def _iter_documents(document_service: DocumentService) -> AsyncGenerator[Document]:
+    pagination = Pagination(offset=0, limit=25)
+    while True:
+        result = await document_service.list_documents(pagination)
+        if result.results:
+            for doc in result.results:
+                yield doc
+            pagination = Pagination(
+                offset=pagination.offset + len(result.results),
+                limit=pagination.limit,
+            )
+        else:
+            break
+
+
+async def _async_batched[T](iterable: AsyncIterable[T], batch_size: int) -> AsyncIterable[Sequence[T]]:
+    batch: list[T] = []
+    async for item in iterable:
+        batch.append(item)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
