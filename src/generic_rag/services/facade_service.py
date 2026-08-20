@@ -1,8 +1,10 @@
 import enum
 import hashlib
 import logging
+import uuid
 from asyncio import TaskGroup
 from enum import StrEnum
+from pathlib import PosixPath
 from typing import Literal
 
 from aidial_sdk.exceptions import InvalidRequestError, ResourceNotFoundError
@@ -13,8 +15,9 @@ from pgqueuer import Queries
 from generic_rag.app.jobs import (
     CreateChannelArchiveJobPayload,
     EntrypointName,
+    ImportChannelArchiveJobPayload,
     IndexDocumentJobPayload,
-    run_background_job,
+    enqueue_job,
 )
 from generic_rag.channel import Channel
 from generic_rag.db.session import transaction
@@ -72,7 +75,7 @@ class FacadeService:
         :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
         """
         document = await self._document_service.create_document(attachment, folder, metadata, overwrite)
-        await self._reset_channel_archive()
+        await self._reset_channel_export_archive()
 
         if document.status == DocumentStatus.ready:
             return document
@@ -93,7 +96,7 @@ class FacadeService:
         :param metadata: metadata to assign with document (should match JSON schema associated with this channel)
         """
         document = await self._document_service.update_document(document_id, attachment, metadata)
-        await self._reset_channel_archive()
+        await self._reset_channel_export_archive()
 
         if document.status == DocumentStatus.ready:
             return document
@@ -139,7 +142,7 @@ class FacadeService:
         if not await self._document_service.exists_by_id(document_id):
             raise ResourceNotFoundError(f"Document '{document_id}' not found.")
 
-        await self._reset_channel_archive()
+        await self._reset_channel_export_archive()
         await self._delete_document_data(document_id)
         await self._document_service.delete_document(document_id)
 
@@ -172,7 +175,7 @@ class FacadeService:
         if mode != "sync":
             application_id = await afind_instance(DialApplicationId)
 
-            if await run_background_job(
+            if await enqueue_job(
                 EntrypointName.index_document,
                 payload=IndexDocumentJobPayload(
                     application_id=application_id,
@@ -185,19 +188,19 @@ class FacadeService:
                 logger.info(f"Document '{document.id}' will be indexed in background")
                 return document, True
 
-        await self._reset_channel_archive()
+        await self._reset_channel_export_archive()
         await self._indexing_service.index_document(document, index_names=index_names, force=force)
 
         return await self._document_service.get_document(document.id), False
 
-    async def get_channel_archive(self) -> FileMetadata | None:
+    async def get_channel_export_archive(self) -> FileMetadata | None:
         """Get metadata object of channel archive."""
         bucket = await self._file_storage.get_bucket()
         return await self._file_storage.get_file_metadata(
             f"files/{bucket}/export/{self._channel.channel_key}.zip"
         )
 
-    async def get_channel_archive_status(self) -> ChannelArchiveStatus:
+    async def get_channel_export_archive_status(self) -> ChannelArchiveStatus:
         """Return the status the channel archiving process."""
         queries = await afind_instance(Queries)
         application_id = await afind_instance(DialApplicationId)
@@ -222,25 +225,25 @@ class FacadeService:
             if payload.application_id == application_id:
                 return ChannelArchiveStatus.error
 
-        if await self.get_channel_archive():
+        if await self.get_channel_export_archive():
             return ChannelArchiveStatus.ready
 
         return ChannelArchiveStatus.not_found
 
-    async def create_channel_archive(self, background: bool) -> ChannelArchiveStatus:
+    async def create_channel_export_archive(self, background: bool) -> ChannelArchiveStatus:
         """
-        Run the process of channel archive creation.
+        Create the archive with channel's content.
 
         :param background: run action via background job (if possible)
         """
         if background:
-            if (status := await self.get_channel_archive_status()) in {
+            if (status := await self.get_channel_export_archive_status()) in {
                 ChannelArchiveStatus.pending,
                 ChannelArchiveStatus.ready,
             }:
                 return status
 
-            if await run_background_job(
+            if await enqueue_job(
                 EntrypointName.create_channel_archive,
                 payload=CreateChannelArchiveJobPayload(
                     application_id=await afind_instance(DialApplicationId),
@@ -259,7 +262,60 @@ class FacadeService:
         else:
             return ChannelArchiveStatus.ready
 
-    async def _reset_channel_archive(self):
+    async def upload_channel_archive(self, attachment: UploadFile) -> bool:
+        """
+        Upload channel archive and run its processing.
+
+        :param attachment: the channel archive to upload
+        :return: `True` if the archive processing job was created, or `False` otherwise
+        """
+        if not (attachment.size and attachment.file and attachment.content_type == "application/zip"):
+            raise ValueError("Invalid attachment")
+
+        bucket = await self._file_storage.get_bucket()
+        upload_path = str(PosixPath("import", f"{uuid.uuid4().hex}.zip"))
+
+        file_meta = await self._file_storage.put_file(
+            bucket,
+            filepath=upload_path,
+            content_type=attachment.content_type,
+            content=attachment.file,
+        )
+
+        if await enqueue_job(
+            EntrypointName.import_channel_archive,
+            payload=ImportChannelArchiveJobPayload(
+                application_id=await afind_instance(DialApplicationId),
+                archive_url=file_meta.url,
+            ),
+        ):
+            return True
+
+        await self._file_storage.delete_file(file_meta.url)
+        return False
+
+    async def import_channel_archive(self, url: str):
+        """
+        Import content of given archive into the channel.
+
+        :param url: the archive url
+        """
+        try:
+            await self._export_service.import_channel(url)
+        except InvalidRequestError as e:
+            logger.warning(e)
+            await self._file_storage.delete_file(url)
+            # todo: task should be completed with error status, so this probably should be catch
+            #  in custom EntrypointExecutor instead of use of DatabaseRetryEntrypointExecutor
+        except Exception as e:
+            logger.warning(str(e))
+            raise e  # todo: the job should be retried
+        else:
+            await self._file_storage.delete_file(url)
+            # todo: if the job is not succeeded after several retries,
+            #  the file will be remaining in the system - find a way to perform cleanup
+
+    async def _reset_channel_export_archive(self):
         queries = await afind_instance(Queries)
         application_id = await afind_instance(DialApplicationId)
         jobs_to_cancel = []
