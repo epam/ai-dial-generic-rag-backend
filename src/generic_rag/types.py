@@ -84,7 +84,7 @@ class ImageChunk(ChunkMetadata, ChunkRef):
 
     chunk_type: Literal[ChunkType.image] = ChunkType.image
     image_type: ImageType = Field(..., description="type of this chunk's image")
-    mime_type: str = Field(..., description="mime type of this chunk's content")
+    mime_type: str = Field(..., description="MIME type of this chunk's content")
     content: bytes = Field(..., description="the content of this chunk", repr=False)
 
     model_config = ConfigDict(
@@ -122,7 +122,7 @@ class Document(BaseModel, ABC):
     id: int = Field(..., description="unique id of this document within the channel")
     url: str = Field(..., description="url of the original document")
     display_name: str = Field(..., description="user-facing name of the document")
-    mime_type: str = Field(..., description="mime type of the original document")
+    mime_type: str = Field(..., description="MIME type of the original document")
     size: int = Field(..., description="size of the original document (in bytes)")
     metadata: dict = Field(
         default_factory=dict,
@@ -325,6 +325,11 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
 
 class DocumentParser[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Component used to extract chunks from document."""
+
+    @property
+    @abstractmethod
+    def supported_mime_types(self) -> frozenset[str]:
+        """MIME types of documents that can be processed by this parser."""
 
     @abstractmethod
     async def extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]:

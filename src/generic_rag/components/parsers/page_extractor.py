@@ -1,6 +1,7 @@
 import io
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
+from functools import cached_property
 
 import pdfplumber
 from pdfplumber.page import Page
@@ -29,21 +30,18 @@ class PageExtractor(DocumentParser[PageExtractorConfig]):
     not leave the whole document unindexed.
     """
 
+    @cached_property
+    def supported_mime_types(self) -> frozenset[str]:
+        return frozenset({"application/pdf"})
+
     async def extract_chunks(self, document: Document) -> AsyncIterable[ImageChunk]:
         return self._extract_chunks_gen(document)
 
     @log_execution_time(logger)
     async def _extract_chunks_gen(self, document: Document) -> AsyncGenerator[ImageChunk]:
-        if document.mime_type != "application/pdf":
-            logger.info(
-                f"skipping '{document.display_name}': page images are extracted from PDF only, "
-                f"got '{document.mime_type}'"
-            )
-            return
+        assert document.mime_type in self.supported_mime_types
 
-        document_content = await document.get_content()
-
-        with pdfplumber.open(io.BytesIO(document_content)) as pdf:
+        with pdfplumber.open(io.BytesIO(await document.get_content())) as pdf:
             for page_number, page in enumerate(pdf.pages, start=1):
                 logger.info(f"processing page {page_number}...")
 
