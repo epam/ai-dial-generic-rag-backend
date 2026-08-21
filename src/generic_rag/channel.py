@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import itertools
 import json
 import logging
 from abc import ABC
@@ -225,6 +226,15 @@ class Channel:
     def metadata_schema(self):
         """JSON schema of metadata that can be associated with documents of this channel."""
         return copy.deepcopy(self._config.metadata_schema)
+
+    @cached_property
+    def allowed_document_types(self) -> frozenset[str]:
+        """MIME types of documents that can be uploaded to the channel."""
+        return frozenset(
+            itertools.chain(
+                *(parser.supported_mime_types for parser in self.document_parsers),
+            )
+        )
 
     @cached_property
     def document_parsers(self) -> list[DocumentParser]:

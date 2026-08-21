@@ -102,6 +102,9 @@ class IndexingService:
         last_image_chunk_id = 0
 
         for parser in self._channel.document_parsers:
+            if document.mime_type not in parser.supported_mime_types:
+                continue
+
             async for chunk in await parser.extract_chunks(document):
                 if isinstance(chunk, TextChunk):
                     last_text_chunk_id += 1
