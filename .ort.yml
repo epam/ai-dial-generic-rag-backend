@@ -265,3 +265,6 @@ resolutions:
     - message: ".*PyPI::json-repair:0\\.61\\.4.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "MIT License: https://github.com/mangiucugna/json_repair/blob/v0.61.4/LICENSE"
+    - message: ".*PyPI::markdown:3\\.10\\.3.*"
+      reason: "CANT_FIX_EXCEPTION"
+      comment: "BSD 3-Clause License: https://github.com/Python-Markdown/markdown/blob/master/LICENSE.md"
