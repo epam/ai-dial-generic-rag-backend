@@ -27,6 +27,23 @@ from generic_rag.utils.repository import RepositoryMixin
 logger = logging.getLogger(__name__)
 
 
+def validate_content_type(content_type: str, supported_content_types: frozenset) -> None:
+    """Refuse a content type the document pipeline cannot extract text from.
+
+    The type is compared without its parameters, so a client that spells out
+    `text/plain; charset=utf-8` is not rejected for being explicit about the encoding.
+
+    :param content_type: the content type the document is being uploaded with
+    :param supported_content_types: set of allowed content types
+    """
+    media_type = content_type.split(";", maxsplit=1)[0].strip().lower()
+    if media_type not in supported_content_types:
+        supported = ", ".join(sorted(supported_content_types))
+        raise InvalidRequestError(
+            f"'{content_type}': unsupported file type (supported: {supported})",
+        )
+
+
 class DocumentRepository(RepositoryMixin[DocumentEntity]):
     def __init__(self, channel_key: str):
         self._channel_key = channel_key
@@ -319,12 +336,11 @@ class DocumentService:
             self._file_storage,
         )
 
-    @staticmethod
-    def _validate_attachment(attachment: UploadFile):
+    def _validate_attachment(self, attachment: UploadFile):
         if not (attachment.size and attachment.content_type and attachment.filename):
             raise InvalidRequestError("Invalid attachment")
-        if attachment.content_type != "application/pdf":
-            raise InvalidRequestError(f"'{attachment.content_type}': unsupported file type")
+
+        validate_content_type(attachment.content_type, self._channel.allowed_document_types)
 
     def _validate_metadata(self, metadata: dict | None):
         if not metadata:

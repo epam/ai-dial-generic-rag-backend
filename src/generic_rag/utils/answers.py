@@ -287,7 +287,9 @@ def create_attachment(doc: RetrievedDocument, citation_index: int):
         type="text/markdown",
         title=f"[{citation_index}] {doc.source_display_name}",
         data=data.rstrip() or " ",
-        reference_url=f"{doc.source_url}#page={doc.source_page_number}",
+        reference_url=(
+            f"{doc.source_url}#page={doc.source_page_number}" if doc.source_page_number else doc.source_url
+        ),
     )
 
 
