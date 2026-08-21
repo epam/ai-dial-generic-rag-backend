@@ -17,7 +17,7 @@ from generic_rag.components.retrieval.document_selector import (
 from generic_rag.components.search_index import ChunkIndex, tracer
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
-from generic_rag.types import Answer, AnswerStage, AnyChunk, Document, RetrievedDocument, Retriever
+from generic_rag.types import Answer, AnswerStage, ChunkRef, Document, RetrievedDocument, Retriever
 from generic_rag.utils.answers import NoopStage
 
 logger = logging.getLogger(__name__)
@@ -170,8 +170,11 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
         :param top_k: maximum number of results to return
         :param documents: limit the search to the given subset of documents (if not `None`)
         """
-        chunk_refs = await index.search(query, limit=top_k, documents=documents)
-
+        search_results = await index.search(query, limit=top_k, documents=documents)
+        chunks_by_ref = {
+            chunk.get_identity(): chunk
+            for chunk in await self._chunk_service.get_chunks_by_references(search_results)
+        }
         return [
             RetrievedDocument(
                 chunks=[chunk],
@@ -181,26 +184,27 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
                 source_display_name=source.display_name,
                 source_metadata=source.metadata,
             )
-            for chunk, source in await self._load_sources(
-                await self._chunk_service.get_chunks_by_references(chunk_refs)
+            for chunk, source in (
+                (chunks_by_ref.get(ref), source) for ref, source in await self._load_sources(search_results)
             )
+            if chunk is not None
         ]
 
-    async def _load_sources(self, chunks: Collection[AnyChunk]) -> Sequence[tuple[AnyChunk, Document]]:
+    async def _load_sources(self, refs: Collection[ChunkRef]) -> Sequence[tuple[ChunkRef, Document]]:
         """
         Load sources for given chunks.
 
-        :param chunks: list of found chunks
+        :param refs: list of chunk references
         :return: list of pairs (chunk,document)
         """
         async with self._lock:
             if missing_sources := [
-                chunk.document_id for chunk in chunks if chunk.document_id not in self._sources
+                chunk.document_id for chunk in refs if chunk.document_id not in self._sources
             ]:
                 for document in await self._document_service.get_documents_by_id(missing_sources):
                     self._sources[document.id] = document
 
-        return [(chunk, self._sources[chunk.document_id]) for chunk in chunks]
+        return [(chunk_ref, self._sources[chunk_ref.document_id]) for chunk_ref in refs]
 
     @abstractmethod
     async def _get_combined_results(
