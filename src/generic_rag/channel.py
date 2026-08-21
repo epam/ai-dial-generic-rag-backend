@@ -8,6 +8,7 @@ from typing import Annotated, Any, Self
 
 import jsonschema.validators
 from annotated_types import MinLen
+from fastapi.encoders import jsonable_encoder
 from injection import afind_instance
 from pydantic import (
     BaseModel,
@@ -213,6 +214,7 @@ class Channel:
         self._channel_key = channel_key
         self._config = channel_config
         self._indexes: list[ChunkIndex] | None = None
+        self._lock = asyncio.Lock()
 
     @property
     def channel_key(self):
@@ -239,14 +241,16 @@ class Channel:
 
     async def get_indexes(self) -> list[ChunkIndex]:
         """Get indexes configured for this channel."""
-        if self._indexes is None:
-            tasks = [
-                Index.create_async(config, channel_key=self._channel_key, index_name=name)
-                for name, config in self._config.indexes.items()
-            ]
-            self._indexes = list(await asyncio.gather(*tasks))
+        async with self._lock:
+            if self._indexes is None:
+                tasks = [
+                    Index.create_async(config, channel_key=self._channel_key, index_name=name)
+                    for name, config in self._config.indexes.items()
+                ]
+                self._indexes = list(await asyncio.gather(*tasks))
 
-        return [index for index in self._indexes if isinstance(index, ChunkIndex)]
+        assert self._indexes is not None
+        return self._indexes
 
     @cached_property
     def request_config(self) -> RequestConfig:
@@ -261,9 +265,11 @@ class Channel:
 
     def dump_config(self) -> dict[str, Any]:
         """Create a dictionary representation of this channel's configuration."""
-        return dict(
-            channel_key=self._channel_key,
-            **self._config.model_dump(
-                exclude_none=True,
-            ),
+        return jsonable_encoder(
+            dict(
+                channel_key=self._channel_key,
+                **self._config.model_dump(
+                    exclude_none=True,
+                ),
+            )
         )

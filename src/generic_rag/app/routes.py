@@ -1,7 +1,11 @@
-import io
+import asyncio
 import json
 import os
+from asyncio import CancelledError
 from collections.abc import AsyncGenerator, Sequence
+from contextlib import suppress
+from io import BytesIO
+from pathlib import PosixPath
 from typing import Annotated, Any
 from urllib.parse import quote, urljoin
 
@@ -23,6 +27,7 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import APIKeyHeader
+from fastapi.sse import EventSourceResponse, format_sse_event
 from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import (
@@ -45,18 +50,16 @@ from starlette.status import (
 from starlette.templating import Jinja2Templates
 
 from generic_rag.app import APP_NAME, APP_VERSION
-from generic_rag.app.jobs import run_index_document_job
 from generic_rag.app.settings import ApplicationSettings
 from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
-from generic_rag.scope import ChannelBindings
+from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.export_service import ExportService
-from generic_rag.services.facade_service import FacadeService
-from generic_rag.services.indexing_service import IndexingService
+from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.services.retrieval_service import RetrievalRequest, RetrievalResult, RetrievalService
-from generic_rag.types import Document
+from generic_rag.types import Document, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 
 _channel = APIRouter()
@@ -129,7 +132,7 @@ async def create_document(
         Query(description="allow to overwrite the document that already exists (if any)"),
     ] = False,
     facade_service: Inject[FacadeService] = NotImplemented,
-):
+) -> Document:
     """
     Upload document into the channel.
 
@@ -148,7 +151,7 @@ async def import_document(
     export_service: Inject[ExportService] = NotImplemented,
 ) -> Document:
     """Import document into the channel."""
-    return await export_service.import_document(await attachment.read(), overwrite)
+    return await export_service.import_document(attachment.file, overwrite)
 
 
 class ExistsResponse(BaseModel):
@@ -241,10 +244,12 @@ async def export_document_data(
 ):
     """Export document and all its indexes."""
     document = await document_service.get_document(document_id)
-    document_data = await export_service.export_document(document)
+    stream = BytesIO()
+
+    await export_service.export_document(document, stream)
 
     async def _content_stream() -> AsyncGenerator[bytes]:
-        stream = io.BytesIO(document_data)
+        stream.seek(0)
         while chunk := stream.read(512 * 1024):
             yield chunk
 
@@ -254,7 +259,7 @@ async def export_document_data(
         content=_content_stream(),
         media_type="application/vnd.msgpack",
         headers={
-            "Content-Length": str(len(document_data)),
+            "Content-Length": str(stream.tell()),
             "Content-Disposition": f"attachment; filename*=utf-8''{filename}",
             "Access-Control-Expose-Headers": "content-disposition",
         },
@@ -306,18 +311,15 @@ async def reindex_document(  # noqa: PLR0913
         ),
     ] = False,
     async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
-    document_service: Inject[DocumentService] = NotImplemented,
-    indexing_service: Inject[IndexingService] = NotImplemented,
+    facade_service: Inject[FacadeService] = NotImplemented,
 ):
     """Reindex the document with given id."""
-    document = await document_service.get_document(document_id)
-
-    if async_ and await run_index_document_job(document_id, index_names or None, force):
+    document, background = await facade_service.reindex_document(
+        document_id, index_names or None, force, async_
+    )
+    if background:
         response.status_code = HTTP_202_ACCEPTED
-        return document
-
-    await indexing_service.index_document(document, index_names=index_names or None, force=force)
-    return await document_service.get_document(document.id)
+    return document
 
 
 class MetadataSchemaResponse(BaseModel):
@@ -344,6 +346,85 @@ async def get_metadata_schema(
     return MetadataSchemaResponse(
         schema_=channel.metadata_schema,
         dimensions=await metadata_service.get_filtering_dimensions(),
+    )
+
+
+class ChannelArchiveResponse(BaseModel):
+    status: ChannelArchiveStatus
+
+
+@_channel.get("/export", tags=["export"], response_class=StreamingResponse)
+async def download_channel_content(
+    facade_service: Inject[FacadeService],
+    application_id: Inject[DialApplicationId],
+    file_storage: Inject[FileStorage],
+):
+    """Download exported data of the channel as single archive."""
+    if (archive := await facade_service.get_channel_archive()) is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Channel archive is not ready.",
+        )
+
+    archive_date = archive.updated_at.date().isoformat()
+    _, ext = os.path.splitext(archive.name)
+
+    filename = quote(f"{PosixPath(application_id).name}_{archive_date}{ext}")
+    content_stream = await file_storage.download_file(archive.url)
+
+    assert content_stream is not None
+
+    return StreamingResponse(
+        content=content_stream,
+        media_type=archive.content_type,
+        headers={
+            "Content-Length": str(archive.content_length),
+            "Content-Disposition": f"attachment; filename*=utf-8''{filename}",
+            "Access-Control-Expose-Headers": "content-disposition",
+        },
+    )
+
+
+@_channel.put(
+    "/export", tags=["export"], status_code=HTTP_202_ACCEPTED, response_model=ChannelArchiveResponse
+)
+async def trigger_channel_export(
+    request: Request,
+    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
+    facade_service: Inject[FacadeService] = NotImplemented,
+):
+    """Trigger exporting the data of the channel."""
+    if async_:
+        return ChannelArchiveResponse(
+            status=await facade_service.create_channel_archive(True),
+        )
+
+    async def _content():
+        task = asyncio.create_task(facade_service.create_channel_archive(False))
+        try:
+            while not task.done():
+                yield format_sse_event(comment="ping")
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
+                if await request.is_disconnected():
+                    break
+            yield format_sse_event(
+                data_str=ChannelArchiveResponse(status=task.result()).model_dump_json(),
+            )
+        except CancelledError:
+            if task.cancel():
+                with suppress(CancelledError):
+                    await task
+            raise
+
+    return EventSourceResponse(status_code=HTTP_202_ACCEPTED, content=_content())
+
+
+@_channel.get("/export/status", tags=["export"])
+async def get_channel_export_status(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
+    """Get the status of the archive with exported channel data."""
+    return ChannelArchiveResponse(
+        status=await facade_service.get_channel_archive_status(),
     )
 
 

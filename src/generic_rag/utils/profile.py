@@ -20,7 +20,7 @@ def log_execution_time(logger: logging.Logger):
         finally:
             elapsed_time = round(time.perf_counter() - started, 2)
             if exc is None:
-                logger.info(f"'{target.__qualname__}': execution took {elapsed_time:.2f} second(s)")
+                logger.debug(f"'{target.__qualname__}': execution took {elapsed_time:.2f} second(s)")
             else:
                 logger.warning(
                     f"'{target.__qualname__}': completed with error after {elapsed_time:.2f} second(s)"

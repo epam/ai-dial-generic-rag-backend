@@ -19,7 +19,7 @@ from generic_rag.types import FileMetadata, FileStorage, LlmConfig, ModelProvide
 from generic_rag.utils.caching import CachingFileStorage
 from generic_rag.utils.llm import LCMessageLogger
 
-FILE_CHUNK_SIZE = 512 * 1024  # 512KB
+FILE_CHUNK_SIZE = 64 * 1024  # 64KB
 EMBEDDINGS_BATCH_SIZE = 250
 OPENAI_API_VERSION = "2023-03-15-preview"
 
