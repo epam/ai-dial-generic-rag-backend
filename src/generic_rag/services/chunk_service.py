@@ -240,8 +240,7 @@ class ChunkService:
         the parsers yield them. Text and image chunks are numbered by two independent counters, so
         the ordering is meaningful within each chunk type but says nothing about how chunks of
         different types relate to each other. Note also that indexing order equals the document's
-        reading order only as long as parsers emit their chunks sequentially, which is what both
-        current parsers do.
+        reading order only as long as parsers emit their chunks sequentially.
 
         :param doc_pages: pairs of (document_id, page_number) describing required pages
         :param chunk_type: defines what types of chunks to return
