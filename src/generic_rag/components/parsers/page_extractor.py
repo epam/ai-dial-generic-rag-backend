@@ -22,13 +22,7 @@ class PageExtractorConfig(BaseModel):
 
 
 class PageExtractor(DocumentParser[PageExtractorConfig]):
-    """Parser that extracts images of document pages.
-
-    Applies to PDF documents only. A channel can be configured with several parsers and hold
-    documents of several types, so anything else is skipped rather than failed: the other
-    parsers still have chunks to contribute, and one document that has no pages to render must
-    not leave the whole document unindexed.
-    """
+    """Parser that extracts images of document pages."""
 
     @cached_property
     def supported_mime_types(self) -> frozenset[str]:
