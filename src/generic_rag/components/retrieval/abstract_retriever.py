@@ -45,7 +45,7 @@ class AbstractRetrieverRequest(BaseModel, ABC):
         }
         # noinspection PyTypedDict
         top_k_model = TypedDict(AbstractRetrieverRequest.__name__ + "TopK", top_k_fields)
-        top_k_default = {idx.index_name: idx.default_limit for idx in indexes}
+        top_k_default = {idx.index_name: idx.config.default_limit for idx in indexes}
 
         return create_model(
             cls.__name__,
@@ -144,8 +144,8 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
             tasks = [
                 asyncio.create_task(
                     _run_retrieval_stage(
-                        answer.create_stage(index.display_name),
-                        index.display_name,
+                        answer.create_stage(index.config.display_name),
+                        index.config.display_name,
                         self._index_search(query, index, top_k, documents),
                     )
                 )

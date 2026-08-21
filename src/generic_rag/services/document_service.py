@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -19,9 +20,11 @@ from generic_rag.channel import Channel
 from generic_rag.db.entities import DocumentEntity
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.scope import ScopeName
-from generic_rag.services.document_matcher import DocumentMatcher
+from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
 from generic_rag.types import Document, DocumentStatus, FileMetadata, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
+from generic_rag.utils.profile import log_execution_time
+from generic_rag.utils.ranking import rank_fusion
 from generic_rag.utils.repository import RepositoryMixin
 
 logger = logging.getLogger(__name__)
@@ -196,14 +199,15 @@ class DocumentService:
 
     @transaction
     async def list_documents(
-        self, pagination: Pagination, matcher: DocumentMatcher | None = None
+        self, pagination: Pagination, matcher_config: DocumentMatcherConfig | None = None
     ) -> PaginatedResults[Document]:
         """
         Return list of all documents uploaded to a channel with pagination.
 
         :param pagination: pagination parameters
-        :param matcher: describes required subset of documents
+        :param matcher_config: describes required subset of documents
         """
+        matcher = DocumentMatcher(self._channel.channel_key, matcher_config) if matcher_config else None
         results = [
             _Document.from_entity(entity, self._file_storage)
             for entity in await self._repository.list_all(
@@ -214,6 +218,61 @@ class DocumentService:
         ]
         total_count = await self._repository.get_total_count(matcher)
         return PaginatedResults.create(results, pagination, total_count)
+
+    @log_execution_time(logger)
+    @transaction
+    async def search(
+        self,
+        query: str,
+        limit: int = 5,
+        index_names: list[str] | None = None,
+        matcher_config: DocumentMatcherConfig | None = None,
+    ) -> Sequence[Document]:
+        """
+        Search for document that are relevant to given query.
+
+        :param query: the search query
+        :param limit: maximum number of results to return
+        :param index_names: list of indexes to use (also defines the order of intermediate search stages);
+          if not defined, indexes with `include_in_hybrid` set to `True` will be used
+        :param matcher_config: describes subset of documents that should be included in search scope
+        """
+        if index_names and len(index_names) != len(set(index_names)):
+            raise ValueError("`index_names` must be unique!")
+
+        if matcher_config:
+            logger.debug(matcher_config.model_dump_json(indent=2))
+
+        search_scope = (
+            await DocumentMatcher(self._channel.channel_key, matcher_config).get_documents_subset()
+            if matcher_config
+            else None
+        )
+
+        all_indexes = {idx.index_name: idx for idx in await self._channel.get_indexes("document")}
+        tasks = [
+            asyncio.create_task(
+                idx.search(query, limit, documents=search_scope),
+            )
+            for name in (
+                index_names
+                or (idx.index_name for idx in all_indexes.values() if idx.config.include_in_hybrid)
+            )
+            if (idx := all_indexes.get(name)) is not None
+        ]
+
+        if not tasks:
+            return []
+
+        matched_ids = await rank_fusion(await asyncio.gather(*tasks), key=lambda x: x)
+        matched_ids = matched_ids[:limit]
+        documents = {
+            doc.id: doc
+            for doc in await self.get_documents_by_id(
+                set(matched_ids),
+            )
+        }
+        return [documents[doc_id] for doc_id in matched_ids]
 
     @transaction
     async def create_document(

@@ -27,7 +27,7 @@ from generic_rag.components.retrieval.document_selector import (
 )
 from generic_rag.scope import ChannelBindings
 from generic_rag.services.chunk_service import ChunkService
-from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig, SingleFilterModel
+from generic_rag.services.document_matcher import DocumentMatcherConfig, SingleFilterModel
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.document_stats_service import DocumentStats, DocumentStatsService
 from generic_rag.services.metadata_service import MetadataService
@@ -125,16 +125,16 @@ class ListDocumentsTool(NamedTuple):
         Results are unsorted and unordered. Pagination does not imply ranking or recency.
         Do not use the first page of results to infer “latest”, “top”, “first”, or “last” documents.
         """
-        if metadata_filter:
-            matcher_config_model = await DocumentMatcherConfig.get_dynamic_model()
-            document_matcher = DocumentMatcher(
-                self.channel.channel_key, matcher_config_model.model_validate({"filters": [metadata_filter]})
+        matcher_config = (
+            (await DocumentMatcherConfig.get_dynamic_model()).model_validate(
+                {"filters": [metadata_filter]},
             )
-        else:
-            document_matcher = None
+            if metadata_filter
+            else None
+        )
 
         pagination = Pagination(offset, limit)
-        documents_list = await self.document_service.list_documents(pagination, document_matcher)
+        documents_list = await self.document_service.list_documents(pagination, matcher_config)
         documents_stats: dict[int, DocumentStats] = {
             doc_stats.document_id: doc_stats
             for doc_stats in await self.stats_service.get_document_stats(*[

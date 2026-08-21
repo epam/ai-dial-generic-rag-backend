@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import suppress
 from io import BytesIO
 from pathlib import PosixPath
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, urljoin
 
 from async_lru import alru_cache
@@ -37,6 +37,7 @@ from pydantic import (
     SecretStr,
     ValidationError,
     create_model,
+    field_validator,
 )
 from starlette.responses import StreamingResponse
 from starlette.status import (
@@ -54,6 +55,7 @@ from generic_rag.app.settings import ApplicationSettings
 from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
 from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
+from generic_rag.services.document_matcher import DocumentMatcherConfig
 from generic_rag.services.document_service import DocumentService
 from generic_rag.services.export_service import ExportService
 from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
@@ -168,6 +170,93 @@ async def check_document_existence(
     return ExistsResponse(
         exists=await document_service.exists_by_name(filename, folder),
     )
+
+
+class DocumentSearchRequest[IndexNameT: str = str, MatcherT: DocumentMatcherConfig = DocumentMatcherConfig](
+    BaseModel
+):
+    query: str = Field(description="The search query.")
+    limit: int = Field(5, description="Maximum number of results to return.")
+    indexes: list[IndexNameT] | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "List of document indexes to use, also defines the order of intermediate search stages. "
+            "If omitted, indexes with `include_in_hybrid` set to `true` will be used."
+        ),
+    )
+    matcher: MatcherT | None = Field(
+        default=None,
+        description=(
+            "Configuration of document matcher that restricts "
+            "search scope to subset of documents that match given criteria."
+        ),
+    )
+
+    @classmethod
+    @inject
+    async def get_dynamic_model(cls, channel: Channel = NotImplemented) -> type["DocumentSearchRequest"]:
+        index_names = [idx.index_name for idx in await channel.get_indexes("document")]
+
+        # noinspection type-hints
+        index_name_model = Literal[tuple(index_names)] if index_names else str
+        matcher_model = await DocumentMatcherConfig.get_dynamic_model()
+
+        # noinspection bad-return
+        return create_model(
+            cls.__name__,
+            __base__=cls[index_name_model, matcher_model],
+            __doc__=cls.__doc__,
+        )
+
+    @field_validator("indexes", mode="after")
+    @classmethod
+    def ensure_indexes_unique(cls, value: list[IndexNameT] | None):
+        if value and len(value) != len(set(value)):
+            raise ValueError("Values must be unique.")
+        return value
+
+
+@_channel.post(
+    "/documents/search",
+    tags=["documents"],
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": DocumentSearchRequest.model_json_schema(),
+                }
+            }
+        }
+    },
+)
+async def search_for_relevant_documents(
+    raw_body: dict[str, Any],
+    document_service: Inject[DocumentService] = NotImplemented,
+) -> Sequence[Document]:
+    """
+    Run search of documents relevant to a given query (using indexes).
+
+    The schema of the request body is dynamic and depends on configuration of the channel,
+    and here you can see only overall structure of the schema.
+    To get the full schema call `GET /channel/documents/search/schema`.
+    """
+    try:
+        model = await DocumentSearchRequest.get_dynamic_model()
+        body = model.model_validate(raw_body)
+    except ValidationError as e:
+        raise RequestValidationError(errors=e.errors()) from e
+
+    return await document_service.search(
+        body.query, body.limit, index_names=body.indexes, matcher_config=body.matcher
+    )
+
+
+@_channel.get("/documents/search/schema", tags=["documents"])
+async def document_search_request_schema() -> dict[str, Any]:
+    """Return dynamic JSON schema of search request body."""
+    model = await DocumentSearchRequest.get_dynamic_model()
+    return model.model_json_schema()
 
 
 @_channel.get("/documents/{id}", tags=["documents"])

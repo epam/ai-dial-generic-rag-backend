@@ -102,8 +102,6 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
     def __init__(self, config: ConfigT, index_name: str, indexer: Indexer[IndexT]):
         super().__init__(config)
         self._index_name = index_name
-        self._display_name = config.display_name
-        self._default_limit = config.default_limit
         self._indexer = indexer
 
     @classmethod
@@ -139,16 +137,6 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
         return self._index_name
 
     @property
-    def display_name(self):
-        """Human-friendly name of the index."""
-        return self._display_name
-
-    @property
-    def default_limit(self):
-        """Default value for maximum number of results to be returned by search within this index."""
-        return self._default_limit
-
-    @property
     def storage(self) -> IndexStorage[IndexT]:
         """Storage of this index data"""
         return self._storage
@@ -159,7 +147,7 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
 
     @log_execution_time(logger)
     async def search(
-        self, query: str, limit: int, documents: Collection[int] | None = None
+        self, query: str, limit: int | None = None, documents: Collection[int] | None = None
     ) -> Collection[ChunkRef]:
         """
         Search for the data within the index.
@@ -171,7 +159,7 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
         return [
             ChunkRef.model_validate(meta.model_dump())
             for meta in await self._storage.relevance_search(
-                await self._indexer.index_query(query), limit, documents
+                await self._indexer.index_query(query), limit or self.config.default_limit, documents
             )
         ]
 
@@ -218,9 +206,10 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
         super().__init__(*args, **kwargs)
         self._fields = [jsonpath_ng.parse(field_expr) for field_expr in self.config.fields]
 
+    @tracer.start_as_current_span("index-search")
     @log_execution_time(logger)
     async def search(
-        self, query: str, limit: int, documents: Collection[int] | None = None
+        self, query: str, limit: int | None = None, documents: Collection[int] | None = None
     ) -> Collection[int]:
         """
         Search for the data within the index.
@@ -232,7 +221,7 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
         return [
             meta.document_id
             for meta in await self._storage.relevance_search(
-                await self._indexer.index_query(query), limit, documents
+                await self._indexer.index_query(query), limit or self.config.default_limit, documents
             )
         ]
 
