@@ -39,14 +39,18 @@ class CachingFileStorage(FileStorage):
             cache_key = (url, metadata.etag)
             logger.debug(f"{self.__class__.__qualname__}: {cache_key=}")
 
-            if cache_key not in self._cache and float(metadata.content_length) < self._cache.maxsize:
-                content = b"".join([chunk async for chunk in await self._storage.download_file(url)])
-                self._add_to_cache(cache_key, content)
+            if (
+                cache_key not in self._cache
+                and float(metadata.content_length) < self._cache.maxsize
+                and (stream := await self._storage.download_file(url)) is not None
+            ):
+                self._add_to_cache(cache_key, b"".join([chunk async for chunk in stream]))
 
             if (content := self._cache.get(cache_key)) is not None:
                 logger.debug(f"{self.__class__.__qualname__}: return cached value, {url=}")
 
                 async def _content_gen():
+                    assert isinstance(content, bytes)
                     yield content
 
                 return _content_gen()

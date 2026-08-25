@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Sequence
+from collections.abc import AsyncGenerator, Iterable
 from io import BytesIO, FileIO
 from pathlib import PosixPath
 from typing import Annotated, Any, BinaryIO, Literal
@@ -21,6 +21,7 @@ from generic_rag.scope import ScopeName
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.types import AnyChunk, Document, DocumentStatus, FileMetadata, FileStorage, IndexRecord
+from generic_rag.utils.iterables import batched_async
 from generic_rag.utils.pagination import Pagination
 from generic_rag.utils.profile import log_execution_time
 
@@ -109,7 +110,7 @@ class ExportService:
                     json.dumps(self._channel.dump_config(), indent=2),
                 )
 
-                async for batch in _async_batched(_iter_documents(self._document_service), batch_size=10):
+                async for batch in batched_async(_iter_documents(self._document_service), 10):
                     await self._export_to_zip_file(batch, zip_file)
 
             bucket = await self._file_storage.get_bucket()
@@ -220,14 +221,3 @@ async def _iter_documents(document_service: DocumentService) -> AsyncGenerator[D
             )
         else:
             break
-
-
-async def _async_batched[T](iterable: AsyncIterable[T], batch_size: int) -> AsyncIterable[Sequence[T]]:
-    batch: list[T] = []
-    async for item in iterable:
-        batch.append(item)
-        if len(batch) >= batch_size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch

@@ -5,6 +5,7 @@ from collections.abc import Collection, Iterable
 from functools import reduce
 from typing import Annotated, Literal
 
+import jsonpath_ng
 from injection import afind_instance, inject
 from opentelemetry.trace import get_tracer
 from pydantic import BaseModel, Field, TypeAdapter, create_model
@@ -15,6 +16,7 @@ from generic_rag.types import (
     AnyChunk,
     ChunkRef,
     ConfigurableComponent,
+    Document,
     IndexedEntityMeta,
     Indexer,
     IndexStorage,
@@ -100,8 +102,6 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
     def __init__(self, config: ConfigT, index_name: str, indexer: Indexer[IndexT]):
         super().__init__(config)
         self._index_name = index_name
-        self._display_name = config.display_name
-        self._default_limit = config.default_limit
         self._indexer = indexer
 
     @classmethod
@@ -137,39 +137,30 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
         return self._index_name
 
     @property
-    def display_name(self):
-        """Human-friendly name of the index."""
-        return self._display_name
-
-    @property
-    def default_limit(self):
-        """Default value for maximum number of results to be returned by search within this index."""
-        return self._default_limit
-
-    @property
     def storage(self) -> IndexStorage[IndexT]:
         """Storage of this index data"""
         return self._storage
 
 
 class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
-    """Index allowing relevance search on top of document chunks."""
+    """Enables relevance search and retrieval of documents content pieces (chunks)."""
 
     @log_execution_time(logger)
     async def search(
-        self, query: str, limit: int, documents: Collection[int] | None = None
+        self, query: str, limit: int | None = None, documents: Collection[int] | None = None
     ) -> Collection[ChunkRef]:
         """
-        Search records within the index.
+        Search for the data within the index.
 
         :param query: query used for search
         :param limit: maximum number of records to return
         :param documents: allows to define the subset of documents to use
         """
-        indexed_query = await self._indexer.index_query(query)
         return [
             ChunkRef.model_validate(meta.model_dump())
-            for meta in await self._storage.relevance_search(indexed_query, limit, documents)
+            for meta in await self._storage.relevance_search(
+                await self._indexer.index_query(query), limit or self.config.default_limit, documents
+            )
         ]
 
     @tracer.start_as_current_span("index-update")
@@ -180,9 +171,91 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
 
         :param chunks: chunks to update the index with
         """
-        data = [
-            (chunk, IndexedEntityMeta.model_validate(chunk.get_identity().model_dump())) for chunk in chunks
+        if data := [
+            (
+                chunk,
+                IndexedEntityMeta.model_validate(
+                    chunk.get_identity().model_dump(),
+                ),
+            )
+            for chunk in chunks
+        ]:
+            await self._storage.add(
+                await self._indexer.index_data(data),
+            )
+
+
+class DocumentIndexConfig(IndexConfig):
+    fields: list[
+        Annotated[
+            str, Field(pattern=r"^\$(?:\.[a-zA-Z_][a-zA-Z0-9_*]*|\?|\[(?:[0-9*]+|'[^']+'|\"[^\"]+\")\])*$")
+        ]
+    ] = Field(
+        description=(
+            "List of fields to include into the index, defined using JSON-path syntax. "
+            "The following fields can be used:\n"
+            "* `$.display_name`\n"
+            "* `$.content` (for text-based documents only)\n"
+            "* any string field of document's metadata (`$.metadata.<field_name>`)"
+        ),
+    )
+    include_in_hybrid: bool = Field(
+        True,
+        description="Indicates that this index should be included by default in hybrid search.",
+    )
+
+
+class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexConfig]):
+    """Enables relevance search of documents based on their fields."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._fields = [jsonpath_ng.parse(field_expr) for field_expr in self.config.fields]
+
+    @tracer.start_as_current_span("index-search")
+    @log_execution_time(logger)
+    async def search(
+        self, query: str, limit: int | None = None, documents: Collection[int] | None = None
+    ) -> Collection[int]:
+        """
+        Search for the data within the index.
+
+        :param query: query used for search
+        :param limit: maximum number of records to return
+        :param documents: allows to define the subset of documents to use
+        """
+        return [
+            meta.document_id
+            for meta in await self._storage.relevance_search(
+                await self._indexer.index_query(query), limit or self.config.default_limit, documents
+            )
         ]
 
-        records = await self._indexer.index_data(data)
-        await self._storage.add(records)
+    @tracer.start_as_current_span("index-update")
+    @log_execution_time(logger)
+    async def add(self, documents: Iterable[Document]):
+        """Add given documents to the index."""
+        if data := [
+            (
+                item,
+                IndexedEntityMeta(
+                    document_id=doc.id,
+                ),
+            )
+            for doc in documents
+            if (item := await self._extract_data(doc))
+        ]:
+            await self._storage.add(
+                await self._indexer.index_data(data),
+            )
+
+    async def _extract_data(self, doc: Document) -> str:
+        document_view = {"display_name": doc.display_name, "metadata": doc.metadata}
+        if doc.mime_type.lower().startswith("text/"):
+            document_view["content"] = (await doc.get_content()).decode()
+        return "\n".join([
+            match.value
+            for field in self._fields
+            for match in field.find(document_view)
+            if isinstance(match.value, str) and len(match.value)
+        ])

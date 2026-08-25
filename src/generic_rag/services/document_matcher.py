@@ -2,9 +2,10 @@ import datetime
 import enum
 import logging
 from abc import ABC
+from collections.abc import Sequence
 from enum import StrEnum
 from operator import itemgetter
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal
 
 from injection import inject
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -12,6 +13,7 @@ from pydantic.fields import FieldInfo
 from sqlalchemy import DATE, ColumnElement, Select, and_, bindparam, column, func, or_, select, true
 
 from generic_rag.db.entities import DocumentEntity
+from generic_rag.db.session import get_current_session
 from generic_rag.services.metadata_service import (
     MetadataService,
     is_date_field,
@@ -48,7 +50,9 @@ class TopNDocumentsModel[FieldNameT: str](BaseModel, ABC):
 
     @classmethod
     @inject
-    async def get_dynamic_model(cls, metadata_service: MetadataService) -> type["TopNDocumentsModel"] | None:
+    async def get_dynamic_model(
+        cls, metadata_service: MetadataService = NotImplemented
+    ) -> type["TopNDocumentsModel"] | None:
         """Create dynamic model for TopN documents."""
         if sortable_fields := metadata_service.get_sortable_fields():
             # noinspection PyTypeHints
@@ -85,7 +89,7 @@ class StringArrayValueFilterMarker(EnableFilterMarker):
 
 class SingleFilterModel(BaseModel, ABC):
     """
-    Configuration of single filter by documents metadata.
+    Configuration of a single metadata filter.
     To be matching, the document should satisfy **ALL** criteria specified here.
     """
 
@@ -93,13 +97,15 @@ class SingleFilterModel(BaseModel, ABC):
 
     @classmethod
     @inject
-    async def get_dynamic_model(cls, metadata_service: MetadataService) -> type["SingleFilterModel"]:
+    async def get_dynamic_model(
+        cls, metadata_service: MetadataService = NotImplemented
+    ) -> type["SingleFilterModel"]:
         """Create dynamic model fields available for filtering."""
         dimensions = await metadata_service.get_filtering_dimensions()
         model_keys = {}
 
         for key, field_info in metadata_service.get_filterable_fields():
-            description = f"Search within documents with matching `{key}` in metadata"
+            description = f"Match documents whose `{key}` value satisfies the criteria."
 
             if is_date_field(field_info):
                 model_keys[key] = (
@@ -108,7 +114,7 @@ class SingleFilterModel(BaseModel, ABC):
                 )
 
             elif is_string_field(field_info):
-                # noinspection PyTypeHints
+                # noinspection type-hints,bad-argument-type
                 value_type = Literal[tuple(dimensions.get(key))] if dimensions.get(key) else str
                 model_keys[key] = (
                     Annotated[
@@ -119,7 +125,7 @@ class SingleFilterModel(BaseModel, ABC):
                 )
 
             elif is_string_array_field(field_info):
-                # noinspection PyTypeHints
+                # noinspection PyTypeHints,bad-argument-type
                 value_type = Literal[tuple(dimensions.get(key))] if dimensions.get(key) else str
                 model_keys[key] = (
                     Annotated[
@@ -132,55 +138,55 @@ class SingleFilterModel(BaseModel, ABC):
         return create_model(cls.__name__, **model_keys, __base__=cls, __doc__=cls.__doc__)
 
 
-class DocumentMatcherConfig(BaseModel, ABC):
+class DocumentMatcherConfig[FilterT: SingleFilterModel, TopNDocumentsT](BaseModel, ABC):
     """Configuration for document matcher."""
 
-    filters: list[SingleFilterModel]
-    top_n: TopNDocumentsModel | None
+    filters: list[FilterT] = Field(
+        default_factory=list,
+        description=(
+            "List of metadata filters. When defined, search will be performed within documents "
+            "that match to **ANY** of given filters. If empty - will search within **ALL** documents."
+        ),
+    )
+    top_n: TopNDocumentsT | None = Field(
+        default=None,
+        description="Search only within top N documents sorted by given fields after applying all filters.",
+    )
 
     @classmethod
     async def get_dynamic_model(cls) -> type["DocumentMatcherConfig"]:
         """Create dynamic model."""
         single_filter_model = await SingleFilterModel.get_dynamic_model()
         top_n_model = await TopNDocumentsModel.get_dynamic_model()
+
+        # noinspection bad-return,bad-index
         return create_model(
             cls.__name__,
-            filters=(
-                list[single_filter_model],
-                Field(
-                    default=[],
-                    description=(
-                        "List of metadata filters. When defined, search will be performed within documents "
-                        "that match to **ANY** of given filters. If empty - will search within **ALL** documents."
-                    ),
-                ),
-            ),
-            top_n=(
-                top_n_model | None if top_n_model is not None else None,
-                Field(
-                    default=None,
-                    description="Search only within top N documents sorted by given fields after applying all filters.",
-                ),
-            ),
-            __base__=cls,
+            __base__=cls[single_filter_model, top_n_model],
             __doc__=cls.__doc__,
         )
 
     @classmethod
-    async def get_default_value(cls) -> Self:
+    async def get_default_value(cls) -> "DocumentMatcherConfig":
         model = await cls.get_dynamic_model()
         return model.model_validate({})
 
 
 class DocumentMatcher:
-    """Component for creating SQL query to match documents as defined by provided config."""
+    """Component for getting subset of documents matching to different criteria."""
 
     def __init__(self, channel_key: str, config: DocumentMatcherConfig):
         self._channel_key = channel_key
         self._config = config
 
+    async def get_documents_subset(self) -> Sequence[int] | None:
+        """Return IDs of matching documents, or `None` which indicates that all documents should be used."""
+        if (query := self.get_query()) is not None:
+            return (await get_current_session().scalars(query)).all()
+        return None
+
     def get_query(self) -> Select[tuple[int]] | None:
-        """Get query returning IDs of matching documents."""
+        """Get SQL query returning IDs of matching documents."""
         filtering_clauses = [
             clause
             for entry in self._config.filters

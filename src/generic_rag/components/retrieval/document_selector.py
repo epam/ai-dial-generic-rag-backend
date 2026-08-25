@@ -1,12 +1,13 @@
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import cast
 
 from injection import inject
 from pydantic import BaseModel, Field, create_model
 
 from generic_rag.channel import Channel
-from generic_rag.db.session import get_current_session, transaction
+from generic_rag.db.session import transaction
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
 from generic_rag.types import Answer, AnswerStage, ConfigurableComponent
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
     """Implements the logic of getting filters configuration to be used by :class:`DocumentSelector`."""
 
-    async def get_document_subset(self, answer: Answer) -> list[int] | None:
+    async def get_document_subset(self, answer: Answer) -> Sequence[int] | None:
         """
         Get a subset of documents to use for retrieval.
 
@@ -27,13 +28,13 @@ class DocumentSelector[ConfigT: BaseModel = BaseModel](ConfigurableComponent[Con
             return await self._get_document_subset(stage)
 
     @abstractmethod
-    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None: ...
+    async def _get_document_subset(self, stage: AnswerStage) -> Sequence[int] | None: ...
 
 
 class AllDocumentsDocumentSelector(DocumentSelector):
     """Always use all available documents."""
 
-    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> Sequence[int] | None:
         return None
 
 
@@ -61,7 +62,7 @@ class ExactDocumentsDocumentSelectorConfig(BaseModel):
 class ExactDocumentsDocumentSelector(DocumentSelector[ExactDocumentsDocumentSelectorConfig]):
     """Restrict search to specific documents."""
 
-    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> Sequence[int] | None:
         return getattr(self.config, "document_ids", None)
 
 
@@ -74,24 +75,20 @@ class MetadataDocumentSelector[ConfigT: BaseModel = BaseModel](DocumentSelector[
         self._channel_key = channel.channel_key
 
     @transaction
-    async def _get_document_subset(self, stage: AnswerStage) -> list[int] | None:
+    async def _get_document_subset(self, stage: AnswerStage) -> Sequence[int] | None:
         matcher_config = await self._get_matcher_config()
 
-        if (query := DocumentMatcher(self._channel_key, matcher_config).get_query()) is None:
-            stage.append_content("Use all available documents.\n\n")
-            return None
+        if (
+            result := await DocumentMatcher(self._channel_key, matcher_config).get_documents_subset()
+        ) is not None:
+            stage.append_content(f"Selected {len(result)} matching document(s).\n\n")
+            stage.append_content(
+                f"Configuration:\n```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```\n\n"
+            )
+            return result
 
-        stage.append_content(
-            f"Provided configuration:\n```json\n{matcher_config.model_dump_json(indent=2, exclude_none=True)}\n```\n\n"
-        )
-
-        async with get_current_session() as session:
-            cursor = await session.scalars(query)
-            result = list(cursor.all())
-
-        stage.append_content(f"Found {len(result)} matching document(s).\n\n")
-
-        return result
+        stage.append_content("Use all available documents.\n\n")
+        return None
 
     @abstractmethod
     async def _get_matcher_config(self) -> DocumentMatcherConfig: ...
