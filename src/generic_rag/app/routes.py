@@ -235,10 +235,11 @@ async def search_for_relevant_documents(
     document_service: Inject[DocumentService] = NotImplemented,
 ) -> Sequence[Document]:
     """
-    Run search of documents relevant to a given query (using indexes).
+    Search for documents relevant to a given query using indexes.
 
     The schema of the request body is dynamic and depends on configuration of the channel,
     and here you can see only overall structure of the schema.
+
     To get the full schema call `GET /channel/documents/search/schema`.
     """
     try:

@@ -143,7 +143,7 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
 
 
 class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
-    """Enables relevance search document content pieces (chunks)."""
+    """Enables relevance search and retrieval of documents content pieces (chunks)."""
 
     @log_execution_time(logger)
     async def search(
@@ -191,16 +191,22 @@ class DocumentIndexConfig(IndexConfig):
             str, Field(pattern=r"^\$(?:\.[a-zA-Z_][a-zA-Z0-9_*]*|\?|\[(?:[0-9*]+|'[^']+'|\"[^\"]+\")\])*$")
         ]
     ] = Field(
-        description="List of document field to include into the index, defined using json-path syntax",
+        description=(
+            "List of fields to include into the index, defined using JSON-path syntax. "
+            "The following fields can be used:\n"
+            "* `$.display_name`\n"
+            "* `$.content` (for text-based documents only)\n"
+            "* any string field of document's metadata (`$.metadata.<field_name>`)"
+        ),
     )
     include_in_hybrid: bool = Field(
         True,
-        description="Indicates that this index should be included by default in hybrid search",
+        description="Indicates that this index should be included by default in hybrid search.",
     )
 
 
 class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexConfig]):
-    """Enables relevance search of documents."""
+    """Enables relevance search of documents based on their fields."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
