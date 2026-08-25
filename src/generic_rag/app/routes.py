@@ -224,7 +224,9 @@ class DocumentSearchRequest[IndexNameT: str = str, MatcherT: DocumentMatcherConf
         "requestBody": {
             "content": {
                 "application/json": {
-                    "schema": DocumentSearchRequest.model_json_schema(),
+                    "schema": DocumentSearchRequest.model_json_schema(
+                        ref_template="#/components/schemas/{model}"
+                    ),
                 }
             }
         }
@@ -548,6 +550,28 @@ async def _get_channel_router(channel_service: ChannelService = NotImplemented) 
     return router
 
 
+def _process_nested_defs(openapi_schema: dict[str, Any]) -> dict[str, Any]:
+    global_schemas = openapi_schema.setdefault("components", {}).setdefault("schemas", "")
+
+    # if we define complex schema in openapi_extra, this will have $defs;
+    # here we move these $defs into global dictionary
+    for methods in openapi_schema.get("paths", {}).values():
+        for content in methods.values():
+            request_body = content.get("requestBody", {})
+            json_content = request_body.get("content", {}).get("application/json", {})
+            schema = json_content.get("schema", {})
+
+            if "$defs" in schema:
+                defs = schema.pop("$defs")
+                for model_name, model_schema in defs.items():
+                    if model_name not in global_schemas:
+                        # todo: make sure there is no model_name in global_schemas already,
+                        #  otherwise rename the model (and its references) before adding
+                        global_schemas[model_name] = model_schema
+
+    return openapi_schema
+
+
 @inject
 def _get_channel_openapi(router: APIRouter, settings: ApplicationSettings):
     with open(os.path.join(str(os.path.dirname(__file__)), "channel.md")) as fp:
@@ -555,7 +579,7 @@ def _get_channel_openapi(router: APIRouter, settings: ApplicationSettings):
 
     server_url = settings.dial_public_url or settings.dial_url
 
-    return get_openapi(
+    openapi_schema = get_openapi(
         title=APP_NAME,
         version=APP_VERSION,
         summary="A channel-specific API of generic-rag application.",
@@ -574,6 +598,8 @@ def _get_channel_openapi(router: APIRouter, settings: ApplicationSettings):
         ],
         routes=router.routes,
     )
+
+    return _process_nested_defs(openapi_schema)
 
 
 async def setup_routes(app: FastAPI):
