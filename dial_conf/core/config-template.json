@@ -57,6 +57,7 @@
         ],
         "indexes": {
           "keyword-elastic": {
+            "type": "chunk",
             "display_name": "Keyword search",
             "indexer": {
               "type": "text_normalizer",
@@ -67,6 +68,7 @@
             }
           },
           "generic-rag-embeddings": {
+            "type": "chunk",
             "display_name": "Semantic search",
             "indexer": {
               "type": "text_embeddings",
