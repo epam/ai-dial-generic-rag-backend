@@ -305,14 +305,17 @@ class FacadeService:
         except InvalidRequestError as e:
             logger.warning(e)
             await self._file_storage.delete_file(url)
-            # todo: task should be completed with error status, so this probably should be catch
-            #  in custom EntrypointExecutor instead of use of DatabaseRetryEntrypointExecutor
+            # todo: task should be completed with error status without retry, so this probably
+            #  should be catched in custom EntrypointExecutor instead of use of default
+            #  DatabaseRetryEntrypointExecutor which triggers retries in case of any exception
         except Exception as e:
             logger.warning(str(e))
-            raise e  # todo: the job should be retried
+            raise e
         else:
             await self._file_storage.delete_file(url)
-            # todo: if the job is not succeeded after several retries,
+            # todo: the file is removed only if import completed without errors;
+            #  we cannot delete it in case of error because that will make not possible
+            #  to perform retry, but if the import not succeed after several attempt -
             #  the file will be remaining in the system - find a way to perform cleanup
 
     async def _reset_channel_export_archive(self):

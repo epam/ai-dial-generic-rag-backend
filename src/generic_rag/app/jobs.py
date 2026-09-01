@@ -10,11 +10,13 @@ from contextlib import AsyncExitStack, suppress
 from enum import StrEnum
 from types import FrameType
 from typing import Literal, overload
+from urllib.parse import urljoin
 
 import asyncpg
+from aidial_sdk.exceptions import InvalidRequestError
 from aiohttp import ClientSession
 from async_lru import alru_cache
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from injection import afind_instance, inject, singleton
 from pgqueuer import DatabaseRetryEntrypointExecutor, Job, PgQueuer, Queries
 from pgqueuer.adapters.tracing.opentelemetry import OpenTelemetryTracing
@@ -27,7 +29,6 @@ from pgqueuer.domain.errors import DuplicateJobError
 from pgqueuer.domain.models import Context
 from pgqueuer.ports.tracing import set_tracing_class
 from pydantic import BaseModel
-from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
 from generic_rag.app.settings import ApplicationSettings
 from generic_rag.utils.generics import resolve_generic_arg
@@ -67,8 +68,8 @@ class JobRunner[T: JobPayload](ABC):
             raise ValueError("payload cannot be empty!")
 
         self._payload = payload_type.model_validate_json(job.payload)
-        self._application_route_url = (
-            f"{settings.dial_url}/v1/deployments/{self._payload.application_id}/route"
+        self._application_route_url = urljoin(
+            settings.dial_url.encoded_string(), f"/v1/deployments/{self._payload.application_id}/route"
         )
         self._headers = {"api-key": settings.dial_api_key.get_secret_value()}
 
@@ -207,10 +208,9 @@ async def enqueue_job[T: JobPayload](
         )
     except DuplicateJobError as e:
         logger.warning(f"{e!r}")
-        raise HTTPException(
-            status_code=HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(e),
-        ) from e  # todo: return 400 status, because core converts 429 response into 503
+        raise InvalidRequestError(
+            "Similar job was already created, please wait until it completes or cancel it."
+        ) from e
 
     logger.info(f"Created jobs: {job_ids}")
 
@@ -226,7 +226,9 @@ async def _check_application_access(application_id: str) -> bool:
         return False
 
     client_session = await afind_instance(ClientSession)
-    url = f"{settings.dial_url}/v1/deployments/{application_id}/route/channel/config"
+    url = urljoin(
+        settings.dial_url.encoded_string(), f"/v1/deployments/{application_id}/route/channel/config"
+    )
 
     async with client_session.get(
         url, headers={"api-key": settings.dial_api_key.get_secret_value()}
