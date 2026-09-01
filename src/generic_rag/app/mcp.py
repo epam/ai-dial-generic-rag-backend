@@ -35,6 +35,7 @@ from generic_rag.types import (
     AnswerGenerator,
     ChunkType,
     Document,
+    FileStorage,
     ImageChunk,
     ImageType,
     RetrievedDocument,
@@ -55,6 +56,7 @@ provider = LocalProvider()
 class ToolName(StrEnum):
     LIST_DOCUMENTS = "list_documents_unordered"
     GET_PAGES = "get_pages"
+    GET_CITATION_URL = "get_citation_url"
     RETRIEVE_TEXT_CHUNKS = "retrieve_text_chunks"
     RAG_SEARCH = "rag_search"
 
@@ -156,7 +158,7 @@ class ListDocumentsTool(NamedTuple):
 
 
 @provider.tool(name=ToolName.GET_PAGES, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
-@asfunction
+@asfunction()
 class GetPagesTool(NamedTuple):
     chunk_service: ChunkService
 
@@ -218,6 +220,23 @@ class GetPagesTool(NamedTuple):
                 yield content_block
             if content_block := page_images.get(page_idx):
                 yield content_block
+
+
+@provider.tool(name=ToolName.GET_CITATION_URL, annotations=ToolAnnotations(destructiveHint=False))
+@asfunction()
+class GetCitationUrl(NamedTuple):
+    document_service: DocumentService
+    file_storage: FileStorage
+
+    async def __call__(
+        self, document_id: Annotated[int, Field(description="ID of the document", ge=1)]
+    ) -> str:
+        """Return URL for document with given ID."""
+        document = await self.document_service.get_document(document_id)
+        return await self.file_storage.copy_file_to_user(
+            document.url,
+            document.display_name,
+        )
 
 
 class RetrievedChunk(BaseModel):
