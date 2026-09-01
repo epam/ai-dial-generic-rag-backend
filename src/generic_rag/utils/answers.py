@@ -283,9 +283,13 @@ def create_attachment(doc: RetrievedDocument, citation_index: int):
             image_url = create_thumbnail(chunk)
             data += f'![{image_title}]({image_url} "{image_title}")\n\n'
 
+    title = f"[{citation_index}] {doc.source_display_name}"
+    if doc.source_page_number:
+        title += f", page {doc.source_page_number}"
+
     return Attachment(
         type="text/markdown",
-        title=f"[{citation_index}] {doc.source_display_name}",
+        title=title,
         data=data.rstrip() or " ",
         reference_url=(
             f"{doc.source_url}#page={doc.source_page_number}" if doc.source_page_number else doc.source_url
