@@ -2,11 +2,13 @@ import base64
 import enum
 import itertools
 import os
+from asyncio import TaskGroup
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NamedTuple, Self
 
+import annotated_types
 from annotated_types import Gt
 from fastapi import FastAPI
 from fastmcp import FastMCP
@@ -229,14 +231,24 @@ class GetCitationUrl(NamedTuple):
     file_storage: FileStorage
 
     async def __call__(
-        self, document_id: Annotated[int, Field(description="ID of the document", ge=1)]
-    ) -> str:
-        """Return URL for document with given ID."""
-        document = await self.document_service.get_document(document_id)
-        return await self.file_storage.copy_file_to_user(
-            document.url,
-            document.display_name,
-        )
+        self,
+        document_ids: Annotated[
+            list[Annotated[int, annotated_types.Ge(1)]], Field(description="IDs of required documents")
+        ],
+    ) -> dict[int, str]:
+        """Share given documents with a user. Returns a mapping of `{id: url}`."""
+        documents = await self.document_service.get_documents_by_id(document_ids)
+        async with TaskGroup() as task_group:
+            tasks = {
+                doc.id: task_group.create_task(
+                    self.file_storage.copy_file_to_user(
+                        doc.url,
+                        doc.display_name,
+                    )
+                )
+                for doc in documents
+            }
+        return {k: v.result() for k, v in tasks.items()}
 
 
 class RetrievedChunk(BaseModel):
