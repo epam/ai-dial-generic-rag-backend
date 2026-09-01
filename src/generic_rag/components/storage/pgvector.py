@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import itertools
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterable, Callable, Collection, Iterable
@@ -29,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncScalarResult, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.ddl import DDL, CreateIndex, CreateTable
 from sqlalchemy.sql.schema import SchemaItem
@@ -37,10 +38,10 @@ from sqlalchemy.util import OrderedSet
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from generic_rag.types import (
-    IndexedEntityMeta,
     Indexer,
     IndexerCompatibilityError,
     IndexRecord,
+    IndexRecordMeta,
     IndexStorage,
     IndexStorageBackend,
     TextType,
@@ -136,9 +137,25 @@ class TableIndexStorage[IndexT: TextType | VectorType](IndexStorage[IndexT], ABC
     def _get_documents_filtering_clause(table: Table, *document_ids: int) -> ColumnElement[bool]:
         """Return expression to use in `where` clause to apply filtering of given documents."""
         return func.cast(
-            table.c.metadata["document_id"].astext,
+            table.c.metadata[bindparam("document_id", "document_id")],
             INTEGER,
         ).in_(document_ids)
+
+    @staticmethod
+    def _get_metadata_expression(table: Table, fields: Collection[str] | None):
+        """Return expression to select given subset of metadata fields."""
+        return (
+            func.jsonb_build_object(
+                *tuple(
+                    itertools.chain.from_iterable(
+                        (bindparam(field, field), table.c.metadata[bindparam(field, field)])
+                        for field in fields
+                    )
+                )
+            )
+            if fields
+            else table.c.metadata
+        )
 
     async def _get_all_records(self, *documents: int) -> AsyncIterable[IndexRecord[IndexT]]:
         table = await self._get_table()
@@ -254,21 +271,23 @@ class VectorIndexStorage(TableIndexStorage[VectorType]):
         query: VectorType,
         limit: int,
         documents: Collection[int] | None = None,
-    ) -> Collection[IndexedEntityMeta]:
+        fields: Collection[str] | None = None,
+    ) -> Collection[IndexRecordMeta]:
         if documents is not None and len(documents) < 1:
             return []
 
         table = await self._get_table()
-        result: OrderedSet[IndexedEntityMeta] = OrderedSet()
+        result: OrderedSet[IndexRecordMeta] = OrderedSet()
         offset = 0
 
         async with self._session_factory() as session:
+            metadata_expression = self._get_metadata_expression(table, fields)
             where_clause = (
                 [self._get_documents_filtering_clause(table, *documents)] if documents is not None else []
             )
             while len(result) < limit:
-                scalar_result: AsyncScalarResult = await session.scalars(
-                    select(table.c.metadata)
+                scalar_result = await session.scalars(
+                    select(metadata_expression)
                     .where(*where_clause)
                     .order_by(table.c.index.cosine_distance(query))
                     .offset(bindparam("offset", offset))
@@ -279,7 +298,7 @@ class VectorIndexStorage(TableIndexStorage[VectorType]):
                     break
 
                 for row in rows:
-                    if (meta := IndexedEntityMeta.model_validate(row)) not in result:
+                    if (meta := IndexRecordMeta.model_validate(row)) not in result:
                         result.add(meta)
                     if len(result) >= limit:
                         break
@@ -354,7 +373,8 @@ class TextIndexStorage(TableIndexStorage[TextType]):
         query: TextType,
         limit: int,
         documents: Collection[int] | None = None,
-    ) -> Collection[IndexedEntityMeta]:
+        fields: Collection[str] | None = None,
+    ) -> Collection[IndexRecordMeta]:
         if documents is not None and len(documents) < 1:
             return []
 
@@ -366,7 +386,7 @@ class TextIndexStorage(TableIndexStorage[TextType]):
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    table.c.metadata,
+                    self._get_metadata_expression(table, fields),
                     func.ts_rank_cd(ts_vector, ts_query).label("rank"),
                 )
                 .where(
@@ -378,7 +398,7 @@ class TextIndexStorage(TableIndexStorage[TextType]):
                 .order_by(text("rank desc"))
                 .limit(bindparam("limit", limit))
             )
-            return [IndexedEntityMeta.model_validate(raw_meta) for raw_meta, _ in result]
+            return [IndexRecordMeta.model_validate(raw_meta) for raw_meta, _ in result]
 
 
 class PgvectorIndexStorageOptions(BaseModel):

@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from generic_rag.types import (
     AnyChunk,
     ImageChunk,
-    IndexedEntityMeta,
     Indexer,
     IndexRecord,
+    IndexRecordMeta,
     ModelProvider,
     VectorType,
 )
@@ -60,9 +60,9 @@ class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
 
     @log_execution_time(logger)
     async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
     ) -> Collection[IndexRecord[VectorType]]:
-        async def _embed_image_task(chunk: ImageChunk, meta: IndexedEntityMeta):
+        async def _embed_image_task(chunk: ImageChunk, meta: IndexRecordMeta):
             async with self._semaphore:
                 return await self._embed_image(chunk, meta)
 
@@ -70,7 +70,7 @@ class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
 
         return await asyncio.gather(*tasks)
 
-    async def _embed_image(self, chunk: ImageChunk, meta: IndexedEntityMeta) -> IndexRecord[VectorType]:
+    async def _embed_image(self, chunk: ImageChunk, meta: IndexRecordMeta) -> IndexRecord[VectorType]:
         image_base64 = base64.b64encode(chunk.content).decode("utf-8")
         response = await self._model.async_client.create(
             model=self._model.deployment,
