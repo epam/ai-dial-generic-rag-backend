@@ -63,9 +63,6 @@ resolutions:
       reason: "CANT_FIX_EXCEPTION"
       comment: "BSD 3-Clause License: https://github.com/python-websockets/websockets/blob/15.0.1/LICENSE"
 
-    - message: ".*PyPI::pypdf:6\\.15\\.0.*"
-      reason: "CANT_FIX_EXCEPTION"
-      comment: "BSD 3-Clause License: https://github.com/py-pdf/pypdf/blob/6.15.0/LICENSE"
     - message: ".*PyPI::pdfminer-six:20260107.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "MIT License: https://github.com/pdfminer/pdfminer.six/blob/20260107/LICENSE"
