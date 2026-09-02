@@ -1,14 +1,19 @@
 import asyncio
+import itertools
 import json
 import logging
 import os
+import zipfile
 from collections.abc import AsyncGenerator, Iterable
 from io import BytesIO, FileIO
 from pathlib import PosixPath
 from typing import Annotated, Any, BinaryIO, Literal
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
+import aiofiles
 import anyio
+from aidial_sdk.exceptions import InvalidRequestError
+from deepdiff import DeepDiff
 from fastapi import UploadFile
 from injection import scoped
 from msgpack import pack, unpack
@@ -206,6 +211,70 @@ class ExportService:
         logger.info(f"successfully imported document '{record.filename}' as '{document.id}'")
 
         return await self._document_service.get_document(document.id)
+
+    @log_execution_time(logger)
+    async def import_channel(self, archive_url: str):
+        """
+        Import content of given archive into the channel.
+
+        :param archive_url: the URL (within the file storage) of the archive with channel data
+        """
+        metadata = await self._file_storage.get_file_metadata(archive_url)
+
+        assert metadata is not None
+        assert metadata.content_type == "application/zip"
+
+        async with anyio.TemporaryDirectory(prefix="import_") as workdir:
+            logger.info(f"downloading channel archive from: {archive_url}")
+
+            async with aiofiles.open(PosixPath(workdir).joinpath(metadata.name), "wb") as fp:
+                stream = await self._file_storage.download_file(archive_url)
+                assert stream is not None
+                async for chunk in stream:
+                    await fp.write(chunk)
+
+            with ZipFile(PosixPath(workdir).joinpath(metadata.name)) as zip_file:
+                channel_config_name = "_channel.json"
+                if not (channel_config_path := zipfile.Path(zip_file, at=channel_config_name)).exists():
+                    raise InvalidRequestError(f"The archive does not contain `{channel_config_name}`.")
+
+                channel_config = await asyncio.to_thread(json.load, channel_config_path.open("r"))
+
+                if diff := DeepDiff(
+                    self._channel.dump_config(),
+                    channel_config,
+                    exclude_paths=["channel_key", "retriever", "generation"],
+                ):
+                    raise InvalidRequestError(
+                        "The archive is not compatible with the channel.", detail=json.loads(diff.to_json())
+                    )
+
+                for batch in itertools.batched(
+                    filter(lambda item: item.filename.endswith(".msgpack"), zip_file.filelist),
+                    10,
+                    strict=False,
+                ):
+                    await self._import_from_zip_file(batch, zip_file)
+
+    async def _import_from_zip_file(self, items: Iterable[ZipInfo], zip_file: ZipFile):
+        """Import given batch of items from provided zip file into the channel."""
+        async with anyio.TemporaryDirectory(prefix="batch_") as workdir:
+
+            @tracer.start_as_current_span("import-document")
+            async def _import_task(source_path: str):
+                with FileIO(source_path, "rb") as stream:
+                    await self.import_document(stream, overwrite=True)
+
+            extracted_files = []
+
+            for zip_info in items:
+                logger.info(f"extracting '{zip_info.filename}'")
+                extracted_files.append(
+                    await asyncio.to_thread(zip_file.extract, zip_info, workdir),
+                )
+
+            tasks = [_import_task(item) for item in extracted_files]
+            await asyncio.gather(*tasks)
 
 
 async def _iter_documents(document_service: DocumentService) -> AsyncGenerator[Document]:
