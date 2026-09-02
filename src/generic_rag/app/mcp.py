@@ -2,11 +2,13 @@ import base64
 import enum
 import itertools
 import os
+from asyncio import TaskGroup
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NamedTuple, Self
 
+import annotated_types
 from annotated_types import Gt
 from fastapi import FastAPI
 from fastmcp import FastMCP
@@ -35,6 +37,7 @@ from generic_rag.types import (
     AnswerGenerator,
     ChunkType,
     Document,
+    FileStorage,
     ImageChunk,
     ImageType,
     RetrievedDocument,
@@ -55,6 +58,7 @@ provider = LocalProvider()
 class ToolName(StrEnum):
     LIST_DOCUMENTS = "list_documents_unordered"
     GET_PAGES = "get_pages"
+    GET_CITATION_URL = "get_citation_url"
     RETRIEVE_TEXT_CHUNKS = "retrieve_text_chunks"
     RAG_SEARCH = "rag_search"
 
@@ -156,7 +160,7 @@ class ListDocumentsTool(NamedTuple):
 
 
 @provider.tool(name=ToolName.GET_PAGES, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
-@asfunction
+@asfunction()
 class GetPagesTool(NamedTuple):
     chunk_service: ChunkService
 
@@ -218,6 +222,33 @@ class GetPagesTool(NamedTuple):
                 yield content_block
             if content_block := page_images.get(page_idx):
                 yield content_block
+
+
+@provider.tool(name=ToolName.GET_CITATION_URL, annotations=ToolAnnotations(destructiveHint=False))
+@asfunction()
+class GetCitationUrl(NamedTuple):
+    document_service: DocumentService
+    file_storage: FileStorage
+
+    async def __call__(
+        self,
+        document_ids: Annotated[
+            list[Annotated[int, annotated_types.Ge(1)]], Field(description="IDs of required documents")
+        ],
+    ) -> dict[int, str]:
+        """Share given documents with a user. Returns a mapping of `{id: url}`."""
+        documents = await self.document_service.get_documents_by_id(document_ids)
+        async with TaskGroup() as task_group:
+            tasks = {
+                doc.id: task_group.create_task(
+                    self.file_storage.copy_file_to_user(
+                        doc.url,
+                        doc.display_name,
+                    )
+                )
+                for doc in documents
+            }
+        return {k: v.result() for k, v in tasks.items()}
 
 
 class RetrievedChunk(BaseModel):
