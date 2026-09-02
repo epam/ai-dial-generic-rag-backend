@@ -27,7 +27,7 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import APIKeyHeader
-from fastapi.sse import EventSourceResponse, format_sse_event
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import (
@@ -47,6 +47,7 @@ from starlette.status import (
     HTTP_204_NO_CONTENT,
     HTTP_404_NOT_FOUND,
     HTTP_422_UNPROCESSABLE_CONTENT,
+    HTTP_500_INTERNAL_SERVER_ERROR,
 )
 from starlette.templating import Jinja2Templates
 
@@ -448,7 +449,7 @@ async def download_channel_content(
     file_storage: Inject[FileStorage],
 ):
     """Download exported data of the channel as single archive."""
-    if (archive := await facade_service.get_channel_archive()) is None:
+    if (archive := await facade_service.get_channel_export_archive()) is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail="Channel archive is not ready.",
@@ -473,47 +474,77 @@ async def download_channel_content(
     )
 
 
-@_channel.put(
-    "/export", tags=["export"], status_code=HTTP_202_ACCEPTED, response_model=ChannelArchiveResponse
-)
-async def trigger_channel_export(
-    request: Request,
-    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
-    facade_service: Inject[FacadeService] = NotImplemented,
-):
-    """Trigger exporting the data of the channel."""
-    if async_:
-        return ChannelArchiveResponse(
-            status=await facade_service.create_channel_archive(True),
-        )
-
-    async def _content():
-        task = asyncio.create_task(facade_service.create_channel_archive(False))
-        try:
-            while not task.done():
-                yield format_sse_event(comment="ping")
-                with suppress(TimeoutError):
-                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
-                if await request.is_disconnected():
-                    break
-            yield format_sse_event(
-                data_str=ChannelArchiveResponse(status=task.result()).model_dump_json(),
-            )
-        except CancelledError:
-            if task.cancel():
-                with suppress(CancelledError):
-                    await task
-            raise
-
-    return EventSourceResponse(status_code=HTTP_202_ACCEPTED, content=_content())
+@_channel.put("/export", tags=["export"], status_code=HTTP_202_ACCEPTED)
+async def trigger_channel_export(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
+    """Trigger creation of the archive with exported data of the channel."""
+    return ChannelArchiveResponse(
+        status=await facade_service.create_channel_export_archive(True),
+    )
 
 
 @_channel.get("/export/status", tags=["export"])
 async def get_channel_export_status(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
     """Get the status of the archive with exported channel data."""
     return ChannelArchiveResponse(
-        status=await facade_service.get_channel_archive_status(),
+        status=await facade_service.get_channel_export_archive_status(),
     )
+
+
+@_channel.post("/import", tags=["export"], status_code=HTTP_202_ACCEPTED)
+async def import_channel_archive(
+    attachment: Annotated[UploadFile, File(description="the archive with channel content")],
+    facade_service: Inject[FacadeService],
+):
+    """Import archive with previously exported content into the channel."""
+    if await facade_service.upload_channel_archive(attachment):
+        return Response(
+            content=None,
+            status_code=HTTP_202_ACCEPTED,
+        )
+    raise HTTPException(
+        status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Unexpected error",
+    )
+
+
+@_channel.post("/jobs/archive/create", include_in_schema=False, response_class=EventSourceResponse)
+async def run_channel_archive_creation(request: Request, facade_service: Inject[FacadeService]):
+    task = asyncio.create_task(facade_service.create_channel_export_archive(False))
+    try:
+        while not task.done():
+            yield ServerSentEvent(comment="ping")
+            with suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            if await request.is_disconnected():
+                break
+        yield ServerSentEvent(
+            data=ChannelArchiveResponse(status=task.result()),
+        )
+    except CancelledError:
+        if task.cancel():
+            with suppress(CancelledError):
+                await task
+        raise
+
+
+@_channel.post("/jobs/archive/import", include_in_schema=False, response_class=EventSourceResponse)
+async def run_channel_archive_import(
+    url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
+):
+    task = asyncio.create_task(facade_service.import_channel_archive(url))
+    try:
+        while not task.done():
+            yield ServerSentEvent(comment="ping")
+            with suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            if await request.is_disconnected():
+                break
+        yield ServerSentEvent(comment="done")
+    except CancelledError:
+        if task.cancel():
+            with suppress(CancelledError):
+                await task
+        raise
 
 
 class ChannelConfigMixin(BaseModel):

@@ -4,17 +4,20 @@ import enum
 import functools
 import logging
 import signal
+from abc import ABC, abstractmethod
 from asyncio import CancelledError
 from contextlib import AsyncExitStack, suppress
 from enum import StrEnum
 from types import FrameType
-from typing import Literal, NamedTuple, overload
+from typing import Literal, overload
+from urllib.parse import urljoin
 
 import asyncpg
+from aidial_sdk.exceptions import InvalidRequestError
 from aiohttp import ClientSession
 from async_lru import alru_cache
-from fastapi import FastAPI, HTTPException
-from injection import afind_instance, asfunction, inject, singleton
+from fastapi import FastAPI
+from injection import afind_instance, inject, singleton
 from pgqueuer import DatabaseRetryEntrypointExecutor, Job, PgQueuer, Queries
 from pgqueuer.adapters.tracing.opentelemetry import OpenTelemetryTracing
 from pgqueuer.adapters.web import create_web_router
@@ -26,53 +29,136 @@ from pgqueuer.domain.errors import DuplicateJobError
 from pgqueuer.domain.models import Context
 from pgqueuer.ports.tracing import set_tracing_class
 from pydantic import BaseModel
-from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
 from generic_rag.app.settings import ApplicationSettings
+from generic_rag.utils.generics import resolve_generic_arg
 
 logger = logging.getLogger(__name__)
 
 set_tracing_class(OpenTelemetryTracing())
 
 
-@enum.unique
-class EntrypointName(StrEnum):
-    index_document = "document.index"
-    create_channel_archive = "channel.archive.create"
-
-
-class PayloadBase(BaseModel):
+class JobPayload(BaseModel):
     application_id: str
 
 
-class IndexDocumentJobPayload(PayloadBase):
+class JobRunner[T: JobPayload](ABC):
+    """Base class for Job Runner implementations."""
+
+    _payload: T
+
+    @inject
+    def __init__(
+        self,
+        job: Job,
+        *,
+        settings: ApplicationSettings = NotImplemented,
+        client_session: ClientSession = NotImplemented,
+    ):
+        self._client_session = client_session
+
+        if not settings.dial_api_key:
+            raise ValueError("DIAL api-key is not set")
+
+        payload_type = resolve_generic_arg(self, JobRunner, 0)
+
+        if not (payload_type and isinstance(payload_type, type) and issubclass(payload_type, JobPayload)):
+            raise ValueError("job payload type is incorrect")
+        if not job.payload:
+            raise ValueError("payload cannot be empty!")
+
+        self._payload = payload_type.model_validate_json(job.payload)
+        self._application_route_url = urljoin(
+            settings.dial_url.encoded_string(), f"/v1/deployments/{self._payload.application_id}/route"
+        )
+        self._headers = {"api-key": settings.dial_api_key.get_secret_value()}
+
+    @abstractmethod
+    async def run(self, context: Context): ...
+
+
+class IndexDocumentJobPayload(JobPayload):
     document_id: int
     index_names: set[str] | None = None
     force: bool = False
 
 
-class CreateChannelArchiveJobPayload(PayloadBase): ...
+class IndexDocumentJobRunner(JobRunner[IndexDocumentJobPayload]):
+    async def run(self, context: Context):
+        request_url = f"{self._application_route_url}/channel/documents/{self._payload.document_id}/reindex"
+
+        params = [("async", "false")]
+        if self._payload.index_names:
+            params.extend(("index", name) for name in self._payload.index_names)
+        if self._payload.force:
+            params.append(("force", "true"))
+
+        logger.info(
+            f"indexing document with {self._payload.document_id=} of '{self._payload.application_id}'"
+        )
+
+        async with self._client_session.put(
+            url=request_url, params=params, headers=self._headers
+        ) as response:
+            response.raise_for_status()
+
+        logger.info("done")
 
 
-@alru_cache(ttl=3600)
-async def _check_application_access(application_id: str) -> bool:
-    """Check if given application is accessible using global api-key."""
-    settings = await afind_instance(ApplicationSettings)
+class CreateChannelArchiveJobPayload(JobPayload): ...
 
-    if not (application_id and settings.dial_api_key):
-        return False
 
-    client_session = await afind_instance(ClientSession)
-    url = f"{settings.dial_url}/v1/deployments/{application_id}/route/channel/config"
+class CreateChannelArchiveJobRunner(JobRunner[CreateChannelArchiveJobPayload]):
+    async def run(self, context: Context):
+        request_url = f"{self._application_route_url}/channel/jobs/archive/create"
 
-    async with client_session.get(
-        url, headers={"api-key": settings.dial_api_key.get_secret_value()}
-    ) as response:
-        return response.ok
+        with context.cancellation:
+            async with self._client_session.post(
+                request_url, headers=self._headers | {"accept": "text/event-stream"}
+            ) as response:
+                response.raise_for_status()
+                assert response.content_type == "text/event-stream"
+
+                async for line in response.content:
+                    if message := line.decode().strip():
+                        logger.info(message)
+
+            logger.info("done")
+
+
+class ImportChannelArchiveJobPayload(JobPayload):
+    archive_url: str
+
+
+class ImportChannelArchiveJobRunner(JobRunner[ImportChannelArchiveJobPayload]):
+    async def run(self, context: Context):
+        request_url = f"{self._application_route_url}/channel/jobs/archive/import"
+
+        with context.cancellation:
+            async with self._client_session.post(
+                request_url,
+                data={"url": self._payload.archive_url},
+                headers=self._headers | {"accept": "text/event-stream"},
+            ) as response:
+                response.raise_for_status()
+                assert response.content_type == "text/event-stream"
+
+                async for line in response.content:
+                    if message := line.decode().strip():
+                        logger.info(message)
+
+            logger.info("done")
+
+
+@enum.unique
+class EntrypointName(StrEnum):
+    index_document = "document.index"
+    create_channel_archive = "channel.archive.create"
+    import_channel_archive = "channel.archive.import"
 
 
 @overload
-async def run_background_job(
+async def enqueue_job(
     entrypoint: Literal[EntrypointName.index_document],
     payload: IndexDocumentJobPayload,
     *,
@@ -81,7 +167,7 @@ async def run_background_job(
 
 
 @overload
-async def run_background_job(
+async def enqueue_job(
     entrypoint: Literal[EntrypointName.create_channel_archive],
     payload: CreateChannelArchiveJobPayload,
     *,
@@ -89,7 +175,16 @@ async def run_background_job(
 ): ...
 
 
-async def run_background_job[T: PayloadBase](
+@overload
+async def enqueue_job(
+    entrypoint: Literal[EntrypointName.import_channel_archive],
+    payload: ImportChannelArchiveJobPayload,
+    *,
+    dedupe_key: str | None = None,
+): ...
+
+
+async def enqueue_job[T: JobPayload](
     entrypoint: EntrypointName, payload: T, *, dedupe_key: str | None = None
 ) -> bool:
     """
@@ -113,9 +208,8 @@ async def run_background_job[T: PayloadBase](
         )
     except DuplicateJobError as e:
         logger.warning(f"{e!r}")
-        raise HTTPException(
-            status_code=HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(e),
+        raise InvalidRequestError(
+            "Similar job was already created, please wait until it completes or cancel it."
         ) from e
 
     logger.info(f"Created jobs: {job_ids}")
@@ -123,74 +217,26 @@ async def run_background_job[T: PayloadBase](
     return True
 
 
-@asfunction()
-class IndexDocumentEntrypoint(NamedTuple):
-    settings: ApplicationSettings
-    client_session: ClientSession
+@alru_cache(ttl=3600)
+async def _check_application_access(application_id: str) -> bool:
+    """Check if given application is accessible using global api-key."""
+    settings = await afind_instance(ApplicationSettings)
 
-    async def __call__(self, job: Job):
-        if not job.payload:
-            raise RuntimeError("payload cannot be empty!")
-        if not self.settings.dial_api_key:
-            raise RuntimeError("DIAL api-key is not set")
+    if not (application_id and settings.dial_api_key):
+        return False
 
-        payload = IndexDocumentJobPayload.model_validate_json(job.payload)
+    client_session = await afind_instance(ClientSession)
+    url = urljoin(
+        settings.dial_url.encoded_string(), f"/v1/deployments/{application_id}/route/channel/config"
+    )
 
-        application_route_url = f"{self.settings.dial_url}/v1/deployments/{payload.application_id}/route"
-        request_url = f"{application_route_url}/channel/documents/{payload.document_id}/reindex"
-
-        params = [("async", "false")]
-        if payload.index_names:
-            params.extend(("index", name) for name in payload.index_names)
-        if payload.force:
-            params.append(("force", "true"))
-
-        logger.info(f"indexing document with {payload.document_id=} of '{payload.application_id}'")
-
-        async with self.client_session.put(
-            url=request_url, params=params, headers={"api-key": self.settings.dial_api_key.get_secret_value()}
-        ) as response:
-            response.raise_for_status()
-
-        logger.info("done")
+    async with client_session.get(
+        url, headers={"api-key": settings.dial_api_key.get_secret_value()}
+    ) as response:
+        return response.ok
 
 
-@asfunction()
-class CreateChannelArchiveEntrypoint(NamedTuple):
-    settings: ApplicationSettings
-    client_session: ClientSession
-
-    async def __call__(self, job: Job, context: Context):
-        if not job.payload:
-            raise ValueError("payload cannot be empty!")
-        if not self.settings.dial_api_key:
-            raise ValueError("DIAL api-key is not set")
-
-        payload = CreateChannelArchiveJobPayload.model_validate_json(job.payload)
-
-        application_route_url = f"{self.settings.dial_url}/v1/deployments/{payload.application_id}/route"
-        request_url = f"{application_route_url}/channel/archive"
-
-        with context.cancellation:
-            async with self.client_session.put(
-                request_url,
-                params=[("async", "false")],
-                headers={
-                    "api-key": self.settings.dial_api_key.get_secret_value(),
-                    "accept": "text/event-stream",
-                },
-            ) as response:
-                response.raise_for_status()
-                assert response.content_type == "text/event-stream"
-
-                async for line in response.content:
-                    if message := line.decode().strip():
-                        logger.info(message)
-
-            logger.info("done")
-
-
-def _default_executor_factory(params: EntrypointExecutorParameters) -> EntrypointExecutor:
+def _executor_factory(params: EntrypointExecutorParameters) -> EntrypointExecutor:
     """
     Create executor for given entrypoint.
 
@@ -214,16 +260,23 @@ def _default_executor_factory(params: EntrypointExecutorParameters) -> Entrypoin
 @singleton
 async def pgqueuer_factory(asyncpg_pool: asyncpg.Pool) -> PgQueuer:
     pgq = PgQueuer.from_asyncpg_pool(asyncpg_pool)
-    pgq.entrypoint(
-        EntrypointName.index_document,
-        executor_factory=_default_executor_factory,
-        concurrency_limit=2,
-    )(IndexDocumentEntrypoint)
-    pgq.entrypoint(
-        EntrypointName.create_channel_archive,
-        executor_factory=_default_executor_factory,
-        concurrency_limit=1,
-    )(CreateChannelArchiveEntrypoint)
+
+    @pgq.entrypoint(EntrypointName.index_document, executor_factory=_executor_factory, concurrency_limit=2)
+    async def index_document_entrypoint(job: Job, context: Context):
+        await IndexDocumentJobRunner(job).run(context)
+
+    @pgq.entrypoint(
+        EntrypointName.create_channel_archive, executor_factory=_executor_factory, concurrency_limit=1
+    )
+    async def create_channel_archive_entrypoint(job: Job, context: Context):
+        await CreateChannelArchiveJobRunner(job).run(context)
+
+    @pgq.entrypoint(
+        EntrypointName.import_channel_archive, executor_factory=_executor_factory, concurrency_limit=1
+    )
+    async def import_channel_archive_entrypoint(job: Job, context: Context):
+        await ImportChannelArchiveJobRunner(job).run(context)
+
     return pgq
 
 
