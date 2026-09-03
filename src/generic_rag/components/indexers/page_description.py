@@ -53,12 +53,22 @@ class ImageDescription(BaseModel):
     image_summary: str = Field(description="the summary of the image description")
     key_fact: str = Field(description="the most important fact from the image")
 
+    model_config = ConfigDict(
+        hide_input_in_errors=True,
+        extra="forbid",
+    )
+
 
 class TableDescription(BaseModel):
     """Table description"""
 
     table_summary: str = Field(description="the summary of the table description")
     key_fact: str = Field(description="the most important fact from the table")
+
+    model_config = ConfigDict(
+        hide_input_in_errors=True,
+        extra="forbid",
+    )
 
 
 class PageDescription(BaseModel):
@@ -77,6 +87,7 @@ class PageDescription(BaseModel):
 
     model_config = ConfigDict(
         hide_input_in_errors=True,
+        extra="forbid",
     )
 
     @cached_property
@@ -210,8 +221,7 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
 
         prompt = await asyncio.to_thread(self._build_prompt, chunk)
         llm_chain = self._llm.with_structured_output(
-            PageDescription.model_json_schema(),
-            method="json_schema",
+            PageDescription.model_json_schema(), method="json_schema", strict=True
         )
         response = await llm_chain.ainvoke([HumanMessage(prompt)])
         return PageDescription.model_validate(response)
