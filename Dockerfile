@@ -26,7 +26,8 @@ RUN apt-get update && \
       libgl1 \
       libgthread-2.0 && \
     apt-get satisfy -y \
-      "util-linux (>=2.41.5-0+deb13u1)" && \
+      "util-linux (>=2.41.5-0+deb13u1)" \
+      "openssl (>=3.5.7-1~deb13u2)" && \
     apt-get clean
 
 RUN python -m ensurepip --version && \

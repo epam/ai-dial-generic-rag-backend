@@ -5,14 +5,11 @@ import logging
 from asyncio import Semaphore, TaskGroup
 from collections.abc import Collection, Iterable
 from functools import cached_property
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
-import json_repair
 from datauri import DataURI
 from injection import inject
-from langchain_community.callbacks import OpenAICallbackHandler
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -40,24 +37,7 @@ Text with bullet points is NOT a table or image.
 Use only provided information.
 DO NOT make up answer.
 
-Provide answer in JSON format with fields:
-{{
-    "page_summary": "page summary here",
-    "key_fact"     : "the most important fact from the image",
-    "images":[
-        {{
-            "description": "image description",
-            "type"       : "image type (photo, illustration, diagram, etc.)",
-            "key_fact"    : "the most important fact from the image"
-        }}
-    ],
-    "tables":[
-        {{
-            "description": "table description",
-            "key_fact"    : "the most important fact from the table"
-        }}
-    ]
-}}
+Make sure to properly escape special characters, like double quotes, in string fields.
 """
 
 PAGE_DESCRIPTION_DEFAULT_LLM_DEPLOYMENT = "gpt-4.1-mini-2025-04-14"
@@ -68,71 +48,47 @@ MAX_RETRIES = 1_000_000_000  # One billion retries should be enough
 
 
 class ImageDescription(BaseModel):
-    description: str
-    key_fact: str
+    """Image description"""
 
-
-class TableDescription(BaseModel):
-    description: str
-    key_fact: str
-
-
-class PageDescription(BaseModel):
-    page_summary: str
-    key_fact: str
-    images: list[ImageDescription]
-    tables: list[TableDescription]
+    image_summary: str = Field(description="the summary of the image description")
+    key_fact: str = Field(description="the most important fact from the image")
 
     model_config = ConfigDict(
         hide_input_in_errors=True,
+        extra="forbid",
     )
 
-    @classmethod
-    def create(cls, json_str: str) -> Self:
-        json_page = json_repair.loads(json_str)
-        assert isinstance(json_page, dict)
 
-        images: list[dict[str, Any]] = []
-        tables: list[dict[str, Any]] = []
+class TableDescription(BaseModel):
+    """Table description"""
 
-        for image_json in json_page["images"]:
-            if "image" in image_json:
-                image_description = image_json["image"]["description"]
-                image_key_fact = image_json["image"]["key_fact"]
-            else:
-                image_description = image_json["description"]
-                image_key_fact = image_json["key_fact"]
+    table_summary: str = Field(description="the summary of the table description")
+    key_fact: str = Field(description="the most important fact from the table")
 
-            if "no images are present" in image_description.lower():
-                continue
+    model_config = ConfigDict(
+        hide_input_in_errors=True,
+        extra="forbid",
+    )
 
-            images.append({
-                "description": image_description,
-                "key_fact": image_key_fact,
-            })
 
-        for table_json in json_page["tables"]:
-            if "table" in table_json:
-                table_description = table_json["table"]["description"]
-                table_key_fact = table_json["table"]["key_fact"]
-            else:
-                table_description = table_json["description"]
-                table_key_fact = table_json["key_fact"]
+class PageDescription(BaseModel):
+    """Page description"""
 
-            if "no tables are present" in table_description.lower():
-                continue
+    page_summary: str = Field(description="the summary of the page description")
+    key_fact: str = Field(description="the most important fact from the page")
+    images: list[ImageDescription] = Field(
+        description="the array of the descriptions for the images on the page",
+        default_factory=list,
+    )
+    tables: list[TableDescription] = Field(
+        description="the array of the descriptions for the tables on the page",
+        default_factory=list,
+    )
 
-            tables.append({
-                "description": table_description,
-                "key_fact": table_key_fact,
-            })
-
-        return cls.model_validate({
-            "page_summary": json_page.get("page_summary"),
-            "key_fact": json_page.get("key_fact"),
-            "images": images,
-            "tables": tables,
-        })
+    model_config = ConfigDict(
+        hide_input_in_errors=True,
+        extra="forbid",
+    )
 
     @cached_property
     def texts(self) -> list[str]:
@@ -143,14 +99,16 @@ class PageDescription(BaseModel):
                 result.append(chunk)
 
         _add_to_result(self.page_summary)
-        _add_to_result(self.key_fact)
+
+        if self.key_fact:
+            _add_to_result(self.key_fact)
 
         for image in self.images:
-            _add_to_result(image.description)
+            _add_to_result(image.image_summary)
             _add_to_result(image.key_fact)
 
         for table in self.tables:
-            _add_to_result(table.description)
+            _add_to_result(table.table_summary)
             _add_to_result(table.key_fact)
 
         return result
@@ -262,16 +220,11 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
         assert chunk.image_type == ImageType.page
 
         prompt = await asyncio.to_thread(self._build_prompt, chunk)
-        cb = OpenAICallbackHandler()
-
-        response = await self._llm.ainvoke(
-            input=[HumanMessage(prompt)],
-            config=RunnableConfig(callbacks=[cb]),
+        llm_chain = self._llm.with_structured_output(
+            PageDescription.model_json_schema(), method="json_schema", strict=True
         )
-
-        logger.info(f"{cb.total_tokens=} ({cb.prompt_tokens=}, {cb.completion_tokens=})")
-
-        return PageDescription.create(self._get_fixed_json(response.content))
+        response = await llm_chain.ainvoke([HumanMessage(prompt)])
+        return PageDescription.model_validate(response)
 
     def _build_prompt(self, chunk: ImageChunk, image_details: Literal["low", "high", "auto"] = "auto"):
         image = Image.open(io.BytesIO(chunk.content))
@@ -308,26 +261,3 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
                 },
             },
         ]
-
-    @staticmethod
-    def _get_fixed_json(text: str) -> str:
-        text = text.replace(", ]", "]").replace(",]", "]").replace(",\n]", "]")
-
-        # check if JSON is in code block
-        if "```json" in text:
-            open_bracket = text.find("```json")
-            close_bracket = text.rfind("```")
-            if open_bracket != -1 and close_bracket != -1:
-                return text[open_bracket + 7 : close_bracket].strip()
-
-        # check if JSON is in brackets
-        tmp_text = text.replace("{", "[").replace("}", "]")
-        open_bracket = tmp_text.find("[")
-        if open_bracket == -1:
-            return text
-
-        close_bracket = tmp_text.rfind("]")
-        if close_bracket == -1:
-            return text
-
-        return text[open_bracket : close_bracket + 1]
