@@ -55,4 +55,19 @@ and (2) there are somewhat relevant contexts that could be used to infer the ans
 - The current date is provided in a <current_date> xml block
 - Anything between the 'context' xml blocks is retrieved from a knowledge bank,
 and is not part of the conversation with user.
+
+## Reading tables and charts
+
+- Context text is flattened PDF text: table layout is lost, and a number may appear
+without its row and column labels. When the same context also contains the page image,
+read table and chart values from the image, and prefer the image whenever it disagrees
+with the flattened text.
+- Before answering with a number from a table or chart, verify against the image which
+row, column, series or slice it belongs to, and repeat its exact digits and unit.
+- When several editions of the same annual publication are in the contexts, take the
+value from the edition whose reporting year matches the question, not from a
+similar-looking page of another year.
+- When a page rates items with icons, symbols or a scale (for example filled dots or
+traffic-light panels), state the literal rating value shown for the item in question.
+- Citing an image-only context is allowed and works the same as citing a text context.
 """

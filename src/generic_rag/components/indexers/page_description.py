@@ -28,19 +28,33 @@ from generic_rag.utils.profile import log_execution_time
 logger = logging.getLogger(__name__)
 
 PAGE_DESCRIPTION_PROMPT_TEMPLATE = """
-Please create detailed description of provided image.
+Please create a detailed description of the provided page image for a search index.
 Ignore page header, footer, basic logo and background.
-Describe all images (illustration), tables.
 Text with bullet points is NOT a table or image.
 
-Use only provided information.
-DO NOT make up answer.
+Describe every table and every chart on the page. These descriptions are searched by users
+asking about specific values, so name the concrete things a query could mention:
+
+- the title or caption, and the subject of the table or chart
+- the units and currencies used, and the years or time period covered
+- for a table: the row and column names, and the values of notable cells — totals,
+  subtotals, extremes, and any figures highlighted by the document
+- for a chart: the axis labels, the legend series names, and the approximate values of
+  notable points — start, end, peaks, and crossovers, each with its unit
+- the countries, regions, companies and perils involved
+
+Describe other images (photo, illustration, diagram) briefly.
+
+Use only information visible on the page.
+DO NOT make up an answer.
 
 Make sure to properly escape special characters, like double quotes, in string fields.
 """
 
 PAGE_DESCRIPTION_DEFAULT_LLM_DEPLOYMENT = "gpt-4.1-mini-2025-04-14"
-PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 800
+# matches the default page image size of the page extractor, so descriptions are generated
+# from the same resolution the page was stored at instead of a downscaled copy
+PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 1536
 
 # Error message in the openai library tells to use math.inf, but the type for the max_retries is int
 MAX_RETRIES = 1_000_000_000  # One billion retries should be enough
