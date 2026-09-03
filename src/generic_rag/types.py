@@ -312,6 +312,8 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
                 config_model = await config_model.get_dynamic_model()
 
             model_name = impl.__name__ + "Config"
+
+            # noinspection bad-argument-type
             return create_model(
                 model_name,
                 __base__=(
@@ -361,10 +363,10 @@ type VectorType = list[float]
 """ Type for index values encoded as vector (for example, embeddings). """
 
 
-class IndexedEntityMeta(BaseModel):
-    """Metadata of indexed entity."""
+class IndexRecordMeta(BaseModel):
+    """Metadata associated with index record."""
 
-    document_id: int = Field(..., description="id of the document")
+    document_id: int = Field(description="id of related document")
 
     model_config = ConfigDict(
         extra="allow",
@@ -373,14 +375,10 @@ class IndexedEntityMeta(BaseModel):
 
 
 class IndexRecord[IndexT: TextType | VectorType](BaseModel):
-    """
-    Single record stored in an index along with associated metadata.
-    """
+    """Single record stored in an index along with associated metadata."""
 
     index: Annotated[IndexT, Field(description="the record's content")]
-    metadata: Annotated[
-        IndexedEntityMeta, Field(description="the metadata of the indexed entity the record belongs to")
-    ]
+    metadata: Annotated[IndexRecordMeta, Field(description="the metadata associated with the record")]
 
 
 class Indexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
@@ -394,7 +392,7 @@ class Indexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
 
     @abstractmethod
     async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
     ) -> Collection[IndexRecord[IndexT]]:
         """Index given data for further storage."""
 
@@ -408,13 +406,15 @@ class IndexStorage[IndexT: TextType | VectorType](ABC):
         query: IndexT,
         limit: int,
         documents: Collection[int] | None = None,
-    ) -> Collection[IndexedEntityMeta]:
+        fields: Collection[str] | None = None,
+    ) -> Collection[IndexRecordMeta]:
         """
         Search for entities that are relevant to the given query.
 
         :param query: the indexed query used for search
         :param limit: maximum number of results to return
         :param documents: if set, the scope of search will be limited only to given documents
+        :param fields: subset of fields to return (if omitted - all fields will be returned)
         :return: collection of the most relevant entities metadata (sorted by relevancy)
         """
 

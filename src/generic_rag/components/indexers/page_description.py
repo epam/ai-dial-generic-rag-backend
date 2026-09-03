@@ -4,7 +4,6 @@ import itertools
 import logging
 from asyncio import Semaphore, TaskGroup
 from collections.abc import Collection, Iterable
-from functools import cached_property
 from typing import Any, Literal
 
 from datauri import DataURI
@@ -17,9 +16,9 @@ from generic_rag.types import (
     AnyChunk,
     ImageChunk,
     ImageType,
-    IndexedEntityMeta,
     Indexer,
     IndexRecord,
+    IndexRecordMeta,
     LlmConfig,
     ModelProvider,
     VectorType,
@@ -45,6 +44,22 @@ PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 800
 
 # Error message in the openai library tells to use math.inf, but the type for the max_retries is int
 MAX_RETRIES = 1_000_000_000  # One billion retries should be enough
+
+
+type DescriptionKind = Literal[
+    "page_summary",
+    "page_key_fact",
+    "image_summary",
+    "image_key_fact",
+    "table_summary",
+    "table_key_fact",
+]
+
+
+class DescriptionItem(BaseModel):
+    text: str
+    kind: DescriptionKind
+    element_index: int | None = None
 
 
 class ImageDescription(BaseModel):
@@ -90,26 +105,29 @@ class PageDescription(BaseModel):
         extra="forbid",
     )
 
-    @cached_property
-    def texts(self) -> list[str]:
-        result: list[str] = []
+    def flatten(self) -> Collection[DescriptionItem]:
+        result: list[DescriptionItem] = []
 
-        def _add_to_result(chunk: str):
-            if chunk := chunk.replace("\n", " ").replace("\r", " ").strip():
-                result.append(chunk)
+        def _add_to_result(text: str, kind: DescriptionKind, element_index: int | None):
+            if text := text.replace("\n", " ").replace("\r", " ").replace("\u0000", "").strip():
+                result.append(
+                    DescriptionItem(
+                        text=text,
+                        kind=kind,
+                        element_index=element_index,
+                    )
+                )
 
-        _add_to_result(self.page_summary)
+        _add_to_result(self.page_summary, "page_summary", None)
+        _add_to_result(self.key_fact, "page_key_fact", None)
 
-        if self.key_fact:
-            _add_to_result(self.key_fact)
+        for i, image in enumerate(self.images):
+            _add_to_result(image.image_summary, "image_summary", i)
+            _add_to_result(image.key_fact, "image_key_fact", i)
 
-        for image in self.images:
-            _add_to_result(image.image_summary)
-            _add_to_result(image.key_fact)
-
-        for table in self.tables:
-            _add_to_result(table.table_summary)
-            _add_to_result(table.key_fact)
+        for i, table in enumerate(self.tables):
+            _add_to_result(table.table_summary, "table_summary", i)
+            _add_to_result(table.key_fact, "table_key_fact", i)
 
         return result
 
@@ -185,24 +203,34 @@ class PageDescriptionIndexer(Indexer[VectorType, PageDescriptionConfig]):
 
     @log_execution_time(logger)
     async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
     ) -> Collection[IndexRecord[VectorType]]:
         semaphore = Semaphore(self.config.max_concurrency)
 
-        async def _get_page_description(chunk: ImageChunk, meta: IndexedEntityMeta):
+        async def _get_page_description_task(
+            chunk: ImageChunk, meta: IndexRecordMeta
+        ) -> Collection[tuple[str, IndexRecordMeta]]:
             async with semaphore:
                 page_description = await self._get_page_description(chunk)
-                return list(zip(page_description.texts, [meta] * len(page_description.texts), strict=True))
+                return [
+                    (
+                        item.text,
+                        meta.model_copy(
+                            update=item.model_dump(exclude_none=True),
+                        ),
+                    )
+                    for item in page_description.flatten()
+                ]
 
         async with TaskGroup() as task_group:
             tasks = [
-                task_group.create_task(_get_page_description(chunk, meta))
+                task_group.create_task(_get_page_description_task(chunk, meta))
                 for chunk, meta in data
                 if isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page
             ]
 
         texts: list[str] = []
-        record_metas: list[IndexedEntityMeta] = []
+        record_metas: list[IndexRecordMeta] = []
 
         for description, record_meta in itertools.chain(*[task.result() for task in tasks]):
             texts.append(description)

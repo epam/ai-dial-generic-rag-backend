@@ -17,8 +17,8 @@ from generic_rag.types import (
     ChunkRef,
     ConfigurableComponent,
     Document,
-    IndexedEntityMeta,
     Indexer,
+    IndexRecordMeta,
     IndexStorage,
     IndexStorageBackend,
     TextType,
@@ -159,7 +159,10 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
         return [
             ChunkRef.model_validate(meta.model_dump())
             for meta in await self._storage.relevance_search(
-                await self._indexer.index_query(query), limit or self.config.default_limit, documents
+                query=await self._indexer.index_query(query),
+                limit=limit or self.config.default_limit,
+                documents=documents,
+                fields=ChunkRef.model_fields.keys(),
             )
         ]
 
@@ -174,7 +177,7 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
         if data := [
             (
                 chunk,
-                IndexedEntityMeta.model_validate(
+                IndexRecordMeta.model_validate(
                     chunk.get_identity().model_dump(),
                 ),
             )
@@ -227,7 +230,10 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
         return [
             meta.document_id
             for meta in await self._storage.relevance_search(
-                await self._indexer.index_query(query), limit or self.config.default_limit, documents
+                query=await self._indexer.index_query(query),
+                limit=limit or self.config.default_limit,
+                documents=documents,
+                fields=["document_id"],
             )
         ]
 
@@ -238,7 +244,7 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
         if data := [
             (
                 item,
-                IndexedEntityMeta(
+                IndexRecordMeta(
                     document_id=doc.id,
                 ),
             )

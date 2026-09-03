@@ -5,7 +5,7 @@ from injection import inject
 from pydantic import BaseModel, Field
 
 from generic_rag.components.indexers.text_indexer import TextIndexer
-from generic_rag.types import IndexedEntityMeta, IndexRecord, ModelProvider, VectorType
+from generic_rag.types import IndexRecord, IndexRecordMeta, ModelProvider, VectorType
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class TextEmbeddingsIndexer(TextIndexer[VectorType, TextEmbeddingsConfig]):
         return await self._model.aembed_query(query)
 
     async def _index_texts(
-        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+        self, texts: list[str], record_metas: list[IndexRecordMeta]
     ) -> Collection[IndexRecord[VectorType]]:
         embeddings = await self._model.aembed_documents(texts)
 

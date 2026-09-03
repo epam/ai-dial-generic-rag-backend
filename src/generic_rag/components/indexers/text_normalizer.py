@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from spacy.language import Language
 
 from generic_rag.components.indexers.text_indexer import TextIndexer
-from generic_rag.types import IndexedEntityMeta, IndexRecord, TextType
+from generic_rag.types import IndexRecord, IndexRecordMeta, TextType
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class TextNormalizer(TextIndexer[TextType, TextNormalizerConfig]):
         return self._normalize_text(query)
 
     async def _index_texts(
-        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+        self, texts: list[str], record_metas: list[IndexRecordMeta]
     ) -> Collection[IndexRecord[TextType]]:
         return [
             IndexRecord(

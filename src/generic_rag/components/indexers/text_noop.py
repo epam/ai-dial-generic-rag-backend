@@ -1,7 +1,7 @@
 from collections.abc import Collection
 
 from generic_rag.components.indexers.text_indexer import TextIndexer
-from generic_rag.types import IndexedEntityMeta, IndexRecord, TextType
+from generic_rag.types import IndexRecord, IndexRecordMeta, TextType
 
 
 class TextNoopIndexer(TextIndexer[TextType]):
@@ -11,7 +11,7 @@ class TextNoopIndexer(TextIndexer[TextType]):
         return query
 
     async def _index_texts(
-        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+        self, texts: list[str], record_metas: list[IndexRecordMeta]
     ) -> Collection[IndexRecord[TextType]]:
         return [
             IndexRecord(index=text, metadata=meta) for text, meta in zip(texts, record_metas, strict=True)
