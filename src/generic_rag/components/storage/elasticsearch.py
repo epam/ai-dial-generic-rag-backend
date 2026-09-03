@@ -5,10 +5,10 @@ from elasticsearch import AsyncElasticsearch, helpers
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from generic_rag.types import (
-    IndexedEntityMeta,
     Indexer,
     IndexerCompatibilityError,
     IndexRecord,
+    IndexRecordMeta,
     IndexStorage,
     IndexStorageBackend,
     TextType,
@@ -105,13 +105,15 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
         query: IndexT,
         limit: int,
         documents: Collection[int] | None = None,
-    ) -> Collection[IndexedEntityMeta]:
+        fields: Collection[str] | None = None,
+    ) -> Collection[IndexRecordMeta]:
         """
         Search for entities that are relevant to the given query.
 
         :param query: the indexed query used for search
         :param limit: maximum number of results to return
         :param documents: if set, the scope of search will be limited only to given documents
+        :param fields: subset of fields to return (if omitted - all fields will be returned)
         :return: collection of the most relevant entities metadata (sorted by relevancy)
         """
         if documents is not None and len(documents) < 1:
@@ -134,10 +136,15 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
                 }
             }
 
-        raw_result = await self._client.search(index=self._index, query=search_query, size=limit)
+        raw_result = await self._client.search(
+            index=self._index,
+            query=search_query,
+            size=limit,
+            source_includes=[f"metadata.{field}" for field in fields] if fields else None,
+        )
         result = SearchResult.model_validate(raw_result.body)
 
-        return [IndexedEntityMeta.model_validate(hit.source["metadata"]) for hit in result.hits.hits]
+        return [IndexRecordMeta.model_validate(hit.source["metadata"]) for hit in result.hits.hits]
 
     async def add(self, records: Iterable[IndexRecord[IndexT]]):
         """

@@ -6,9 +6,9 @@ from pydantic import BaseModel
 
 from generic_rag.types import (
     AnyChunk,
-    IndexedEntityMeta,
     Indexer,
     IndexRecord,
+    IndexRecordMeta,
     TextChunk,
     TextType,
     VectorType,
@@ -25,7 +25,7 @@ class TextIndexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel]
 
     @log_execution_time(logger)
     async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexedEntityMeta]]
+        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
     ) -> Collection[IndexRecord[IndexT]]:
         texts = []
         record_metas = []
@@ -48,6 +48,6 @@ class TextIndexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel]
 
     @abstractmethod
     async def _index_texts(
-        self, texts: list[str], record_metas: list[IndexedEntityMeta]
+        self, texts: list[str], record_metas: list[IndexRecordMeta]
     ) -> Collection[IndexRecord[IndexT]]:
         """Index given texts for further storage."""
