@@ -1,27 +1,32 @@
 import asyncio
+import base64
 import dataclasses
 import enum
 import functools
 import logging
+import pickle
 import signal
 from abc import ABC, abstractmethod
 from asyncio import CancelledError
 from contextlib import AsyncExitStack, suppress
 from enum import StrEnum
+from http import HTTPMethod
 from types import FrameType
 from typing import Literal, overload
 from urllib.parse import urljoin
 
 import asyncpg
 from aidial_sdk.exceptions import InvalidRequestError
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
+from aiohttp_sse_client.client import EventSource
 from async_lru import alru_cache
 from fastapi import FastAPI
 from injection import afind_instance, inject, singleton
-from pgqueuer import DatabaseRetryEntrypointExecutor, Job, PgQueuer, Queries
+from pgqueuer import Job, PgQueuer, Queries
 from pgqueuer.adapters.tracing.opentelemetry import OpenTelemetryTracing
 from pgqueuer.adapters.web import create_web_router
 from pgqueuer.core.executors import (
+    DatabaseRetryEntrypointExecutor,
     EntrypointExecutor,
     EntrypointExecutorParameters,
 )
@@ -29,6 +34,7 @@ from pgqueuer.domain.errors import DuplicateJobError
 from pgqueuer.domain.models import Context
 from pgqueuer.ports.tracing import set_tracing_class
 from pydantic import BaseModel
+from tblib.decorators import reraise
 
 from generic_rag.app.settings import ApplicationSettings
 from generic_rag.utils.generics import resolve_generic_arg
@@ -73,6 +79,42 @@ class JobRunner[T: JobPayload](ABC):
         )
         self._headers = {"api-key": settings.dial_api_key.get_secret_value()}
 
+    async def _event_stream_helper(self, url: str, method: HTTPMethod, **kwargs):
+        """
+        Perform a request to a Job execution endpoint which should return
+        `text/event-stream` for long-running operations, and yield received events.
+
+        :param url: specifies the URL to which to connect
+        :param method: an HTTP method to use
+        :param kwargs: keyword arguments to pass to underlying EventSource instance
+        """
+
+        def _raise_stop_async_iteration():
+            raise StopAsyncIteration
+
+        async with EventSource(
+            url,
+            option={"method": method.value},
+            session=self._client_session,
+            headers=self._headers,
+            # by default, ClientSession uses total timeout of 5 minutes, and if the operation
+            # takes longer it will raise TimeoutError; EventSource would automatically reconnect
+            # in such cases, but in case of DIAL application route the per-request api-key will
+            # immediately become invalid causing the whole operation to fail,
+            # so here we disable total timeout to allow the stream to run indefinitely
+            timeout=ClientTimeout(total=None, sock_connect=30, sock_read=30),
+            # prevent reconnection attempt if the server closes the connection
+            on_error=_raise_stop_async_iteration,
+            **kwargs,
+        ) as event_source:
+            async for event in event_source:
+                if event.type == "exception":
+                    exc = pickle.loads(base64.b64decode(event.data))
+                    logger.warning(f"Got exception from server: {exc}")
+                    reraise(type(exc), exc)
+
+                yield event
+
     @abstractmethod
     async def run(self, context: Context): ...
 
@@ -85,22 +127,20 @@ class IndexDocumentJobPayload(JobPayload):
 
 class IndexDocumentJobRunner(JobRunner[IndexDocumentJobPayload]):
     async def run(self, context: Context):
-        request_url = f"{self._application_route_url}/channel/documents/{self._payload.document_id}/reindex"
+        url = f"{self._application_route_url}/channel/jobs/documents/{self._payload.document_id}/reindex"
+        params = []
 
-        params = [("async", "false")]
         if self._payload.index_names:
             params.extend(("index", name) for name in self._payload.index_names)
         if self._payload.force:
             params.append(("force", "true"))
 
         logger.info(
-            f"indexing document with {self._payload.document_id=} of '{self._payload.application_id}'"
+            f"indexing document with id={self._payload.document_id} of '{self._payload.application_id}'"
         )
 
-        async with self._client_session.put(
-            url=request_url, params=params, headers=self._headers
-        ) as response:
-            response.raise_for_status()
+        async for event in self._event_stream_helper(url, HTTPMethod.POST, params=params):
+            logger.info(f"received event: {event}")
 
         logger.info("done")
 
@@ -113,15 +153,8 @@ class CreateChannelArchiveJobRunner(JobRunner[CreateChannelArchiveJobPayload]):
         request_url = f"{self._application_route_url}/channel/jobs/archive/create"
 
         with context.cancellation:
-            async with self._client_session.post(
-                request_url, headers=self._headers | {"accept": "text/event-stream"}
-            ) as response:
-                response.raise_for_status()
-                assert response.content_type == "text/event-stream"
-
-                async for line in response.content:
-                    if message := line.decode().strip():
-                        logger.info(message)
+            async for event in self._event_stream_helper(request_url, HTTPMethod.POST):
+                logger.info(f"received event: {event}")
 
             logger.info("done")
 
@@ -135,17 +168,10 @@ class ImportChannelArchiveJobRunner(JobRunner[ImportChannelArchiveJobPayload]):
         request_url = f"{self._application_route_url}/channel/jobs/archive/import"
 
         with context.cancellation:
-            async with self._client_session.post(
-                request_url,
-                data={"url": self._payload.archive_url},
-                headers=self._headers | {"accept": "text/event-stream"},
-            ) as response:
-                response.raise_for_status()
-                assert response.content_type == "text/event-stream"
-
-                async for line in response.content:
-                    if message := line.decode().strip():
-                        logger.info(message)
+            async for event in self._event_stream_helper(
+                request_url, HTTPMethod.POST, data={"url": self._payload.archive_url}
+            ):
+                logger.info(f"received event: {event}")
 
             logger.info("done")
 
@@ -299,7 +325,7 @@ async def _worker_main(stop_event: asyncio.Event, pgq: PgQueuer = NotImplemented
 
         pgq.shutdown.clear()
 
-        logger.info("Restarting worker task")
+        logger.info("Recreating worker task")
         worker_task = asyncio.create_task(pgq.run(shutdown_on_listener_failure=True))
         worker_task.add_done_callback(_on_task_done)
 

@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   core:
-    image: epam/ai-dial-core:0.44.4
+    image: epam/ai-dial-core:0.47.0
     ports:
       - "8080:8080"
     depends_on:

@@ -1,8 +1,10 @@
 import asyncio
+import base64
 import json
 import os
+import pickle
 from asyncio import CancelledError
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Sequence
 from contextlib import suppress
 from io import BytesIO
 from pathlib import PosixPath
@@ -50,6 +52,7 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 from starlette.templating import Jinja2Templates
+from tblib import pickling_support
 
 from generic_rag.app import APP_NAME, APP_VERSION
 from generic_rag.app.settings import ApplicationSettings
@@ -399,12 +402,11 @@ async def reindex_document(  # noqa: PLR0913
             )
         ),
     ] = False,
-    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
     facade_service: Inject[FacadeService] = NotImplemented,
 ):
     """Reindex the document with given id."""
     document, background = await facade_service.reindex_document(
-        document_id, index_names or None, force, async_
+        document_id, index_names or None, force, background=True
     )
     if background:
         response.status_code = HTTP_202_ACCEPTED
@@ -478,7 +480,7 @@ async def download_channel_content(
 async def trigger_channel_export(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
     """Trigger creation of the archive with exported data of the channel."""
     return ChannelArchiveResponse(
-        status=await facade_service.create_channel_export_archive(True),
+        status=await facade_service.create_channel_export_archive(background=True),
     )
 
 
@@ -507,44 +509,93 @@ async def import_channel_archive(
     )
 
 
+@_channel.post("/jobs/documents/{id}/reindex", include_in_schema=False, response_class=EventSourceResponse)
+async def run_document_reindex(  # noqa: PLR0913
+    request: Request,
+    document_id: Annotated[int, Path(alias="id", description="id of the document")],
+    index_names: Annotated[
+        set[str],
+        Query(
+            alias="index",
+            default_factory=set,
+            description="names of indexes to update (if not defined - all indexes will be updated)",
+        ),
+    ],
+    force: Annotated[
+        bool,
+        Query(
+            description=(
+                "perform whole process, including document re-processing and rebuilding of all indexes "
+                "(in this case `index_names` parameter will be ignored); it not set, document processing "
+                "will be performed only if the document wasn't processed yet"
+            )
+        ),
+    ] = False,
+    facade_service: Inject[FacadeService] = NotImplemented,
+):
+    async def _check_connection():
+        return not await request.is_disconnected()
+
+    async for event in run_as_event_stream_helper(
+        facade_service.reindex_document(document_id, index_names or None, force, background=False),
+        _check_connection,
+    ):
+        yield event
+
+
 @_channel.post("/jobs/archive/create", include_in_schema=False, response_class=EventSourceResponse)
 async def run_channel_archive_creation(request: Request, facade_service: Inject[FacadeService]):
-    task = asyncio.create_task(facade_service.create_channel_export_archive(False))
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="ping")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
-                break
-        yield ServerSentEvent(
-            data=ChannelArchiveResponse(status=task.result()),
-        )
-    except CancelledError:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-        raise
+    async def _check_connection():
+        return not await request.is_disconnected()
+
+    async for event in run_as_event_stream_helper(
+        facade_service.create_channel_export_archive(background=False), _check_connection
+    ):
+        yield event
 
 
 @_channel.post("/jobs/archive/import", include_in_schema=False, response_class=EventSourceResponse)
 async def run_channel_archive_import(
     url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
 ):
-    task = asyncio.create_task(facade_service.import_channel_archive(url))
+    async def _check_connection():
+        return not await request.is_disconnected()
+
+    async for event in run_as_event_stream_helper(
+        facade_service.import_channel_archive(url), _check_connection
+    ):
+        yield event
+
+
+async def run_as_event_stream_helper[T](
+    coro: Coroutine[Any, Any, T], check_connection: Callable[..., Awaitable[bool]]
+) -> AsyncGenerator[ServerSentEvent]:
+    """
+    Run given coroutine as a task and yield its result, exception (if any)
+    and heartbeat messages as Server Sent Events (SSE).
+
+    :param coro: the target Coroutine object
+    :param check_connection: a function called to check of the client is still connected
+    """
+    task = asyncio.create_task(coro)
     try:
         while not task.done():
-            yield ServerSentEvent(comment="ping")
+            yield ServerSentEvent(comment="heartbeat")
             with suppress(TimeoutError):
                 await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
+            if not await check_connection():
                 break
-        yield ServerSentEvent(comment="done")
-    except CancelledError:
+        yield ServerSentEvent(event="message", data=task.result())
+    except Exception as e:
+        pickling_support.install(e)
+        yield ServerSentEvent(
+            event="exception",
+            data=base64.b64encode(pickle.dumps(e)).decode(),
+        )
+    finally:
         if task.cancel():
             with suppress(CancelledError):
                 await task
-        raise
 
 
 class ChannelConfigMixin(BaseModel):

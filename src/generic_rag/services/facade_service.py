@@ -111,7 +111,8 @@ class FacadeService:
         document_id: int,
         index_names: set[str] | None = None,
         force: bool = False,
-        background: bool = True,
+        *,
+        background: bool,
     ) -> tuple[Document, bool]:
         """
         Index or reindex document with given ID.
@@ -225,12 +226,13 @@ class FacadeService:
             if payload.application_id == application_id:
                 return ChannelArchiveStatus.error
 
-        if await self.get_channel_export_archive():
+        if archive := await self.get_channel_export_archive():
+            logger.info(archive.model_dump_json(indent=2))
             return ChannelArchiveStatus.ready
 
         return ChannelArchiveStatus.not_found
 
-    async def create_channel_export_archive(self, background: bool) -> ChannelArchiveStatus:
+    async def create_channel_export_archive(self, *, background: bool) -> ChannelArchiveStatus:
         """
         Create the archive with channel's content.
 

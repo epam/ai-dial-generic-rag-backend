@@ -30,7 +30,6 @@ APPLICATION_TYPE_SCHEMA_IDS = {
 
 MAX_CONCURRENCY = 10
 MAX_RETRIES = 3
-MAX_DELAY = 10
 
 APPLICATION_HELP = f"""
 The application can specified either as {click.style("{deployment_name}", fg="cyan")}
@@ -64,7 +63,7 @@ async def _validate_application(session: ClientSession, application_id: str):
         raise OperationError("the application is not Generic RAG application")
 
 
-async def _list_documents(session: ClientSession, application_id: str) -> AsyncGenerator[dict]:
+async def _list_documents(session: ClientSession, application_id: str) -> AsyncGenerator[dict[str, Any]]:
     """List documents uploaded to RAG"""
     offset = 0
     limit = 100
@@ -211,7 +210,7 @@ async def _export_channel(application_id: str, archive_path: str):
         )
 
 
-async def _import_channel(application_id: str, archive_path: str):
+async def _import_channel(application_id: str, archive_path: str, force: bool):
     logger.info(f"{DIAL_URL=}")
     logger.info(f"{application_id=}")
 
@@ -230,7 +229,15 @@ async def _import_channel(application_id: str, archive_path: str):
                 exclude_paths=["channel_key", "retriever", "generation"],
                 view=COLORED_COMPACT_VIEW,
             ):
-                raise OperationError(f"channel config mismatch: {diff}")
+                if force:
+                    logger.warning(
+                        "The channel configuration from the provided archive does not match "
+                        "target application, but 'force' parameter was specified. Please pay attention "
+                        "that this operation could lead to unexpected results!"
+                    )
+                    logger.warning(f"Channel configuration diff: {diff}")
+                else:
+                    raise OperationError(f"Channel config mismatch: {diff}")
 
             with tempfile.TemporaryDirectory(prefix="export_") as workdir:
                 logger.info(f"extracting '{zip_file.filename}' into {workdir}")
@@ -282,13 +289,10 @@ async def _reindex_channel(application_id: str, index_names: set[str] | None, fo
         async for document in _list_documents(session, application_id):
             document_id = document.get("id")
             document_name = document.get("display_name")
-            status = "unknown"
-            delay = 0.5
+            url = f"{application_route}/channel/documents/{document_id}/reindex"
 
             try:
-                async with session.put(
-                    f"{application_route}/channel/documents/{document_id}/reindex", params=params
-                ) as response:
+                async with session.put(url, params=params) as response:
                     response.raise_for_status()
                     body = await response.json()
                     status: str = body.get("status", "unknown")
@@ -296,16 +300,30 @@ async def _reindex_channel(application_id: str, index_names: set[str] | None, fo
             except ClientResponseError as e:
                 logger.warning(str(e))
 
-            while status not in {"error", "ready"}:
-                await asyncio.sleep(delay)
-                delay = min(MAX_DELAY, delay * 2)
-
-                async with session.get(f"{application_route}/channel/documents/{document_id}") as response:
-                    response.raise_for_status()
-                    body = await response.json()
-                    status: str = body.get("status", "unknown")
-
             logger.info(f"[ {status.upper()} ] '{document_name}' (id: {document_id})")
+
+
+async def _clear_channel(application_id: str):
+    logger.info(f"{DIAL_URL=}")
+    logger.info(f"{application_id=}")
+
+    application_route = f"/v1/deployments/{application_id}/route"
+
+    async with ClientSession(base_url=DIAL_URL, headers={"api-key": DIAL_API_KEY}) as session:
+        await _validate_application(session, application_id)
+
+        documents = [
+            (document["id"], document["status"])
+            async for document in _list_documents(session, application_id)
+        ]
+
+        for document_id, document_status in documents:
+            logger.info(f"removing document '{document_id}' (status: '{document_status}')")
+            try:
+                async with session.delete(f"{application_route}/channel/documents/{document_id}") as response:
+                    response.raise_for_status()
+            except ClientResponseError as e:
+                logger.warning(str(e))
 
 
 @click.group()
@@ -326,9 +344,15 @@ def export_channel(application: str, output_path: str):
 )
 @click.argument("application", required=True)
 @click.option("-s", "--source", "source_path", required=True, help="the source file path")
-def import_channel(application: str, source_path: str):
+@click.option(
+    "-f",
+    "--force",
+    is_flag=True,
+    help="bypass channel compatibility check and run the import anyway",
+)
+def import_channel(application: str, source_path: str, force: bool):
     """Import previously exported RAG channel data into application."""
-    asyncio.run(_import_channel(application, source_path))
+    asyncio.run(_import_channel(application, source_path, force))
     logger.info("completed")
 
 
@@ -355,6 +379,14 @@ def import_channel(application: str, source_path: str):
 def reindex_channel(application: str, index_names: set[str] | None, force: bool):
     """Reindex all documents in the channel."""
     asyncio.run(_reindex_channel(application, index_names, force))
+    logger.info("completed")
+
+
+@cli.command(name="clear", help=f"Remove all channel's content.\n\n{APPLICATION_HELP}")
+@click.argument("application", required=True)
+def clear_channel(application: str):
+    """Remove all channel's content."""
+    asyncio.run(_clear_channel(application))
     logger.info("completed")
 
 
