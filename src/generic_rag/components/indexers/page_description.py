@@ -52,9 +52,7 @@ Make sure to properly escape special characters, like double quotes, in string f
 """
 
 PAGE_DESCRIPTION_DEFAULT_LLM_DEPLOYMENT = "gpt-4.1-mini-2025-04-14"
-# matches the default page image size of the page extractor, so descriptions are generated
-# from the same resolution the page was stored at instead of a downscaled copy
-PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 1536
+PAGE_DESCRIPTION_MAX_IMAGE_SIZE = 800
 
 # Error message in the openai library tells to use math.inf, but the type for the max_retries is int
 MAX_RETRIES = 1_000_000_000  # One billion retries should be enough
