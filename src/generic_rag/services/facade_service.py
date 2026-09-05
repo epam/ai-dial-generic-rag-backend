@@ -177,7 +177,7 @@ class FacadeService:
             application_id = await afind_instance(DialApplicationId)
 
             if await enqueue_job(
-                EntrypointName.index_document,
+                EntrypointName.reindex_document,
                 payload=IndexDocumentJobPayload(
                     application_id=application_id,
                     document_id=document.id,

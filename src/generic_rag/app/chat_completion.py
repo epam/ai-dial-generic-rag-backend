@@ -5,7 +5,7 @@ from aidial_sdk.chat_completion import ChatCompletion, Request, Response
 from aidial_sdk.deployment.configuration import ConfigurationRequest, ConfigurationResponse
 from aidial_sdk.exceptions import InternalServerError
 from langchain_community.callbacks import get_openai_callback
-from pydantic import SecretStr, ValidationError
+from pydantic import ValidationError
 from pydantic_partial import create_partial_model
 
 from generic_rag.channel import Channel, RequestConfig
@@ -22,7 +22,7 @@ class ChannelCompletion(ChatCompletion):
 
     async def chat_completion(self, request: Request, response: Response) -> None:
         """Chat completion entrypoint."""
-        async with ChannelBindings(SecretStr(request.api_key), request.dial_application_id).scope.adefine():
+        async with ChannelBindings.from_dial_deployment_request(request):
             answer = SharingManager(
                 DialAnswer(response.create_single_choice(), enable_debug_stages=self._enable_debug_stages)
             )
@@ -78,6 +78,6 @@ class ChannelCompletion(ChatCompletion):
 
     async def configuration(self, request: ConfigurationRequest) -> ConfigurationResponse | dict:
         """Chat completion configuration entrypoint."""
-        async with ChannelBindings(SecretStr(request.api_key), request.dial_application_id).scope.adefine():
+        async with ChannelBindings.from_dial_deployment_request(request):
             configuration_model = create_partial_model(await RequestConfig.get_dynamic_model())
             return configuration_model.model_json_schema()

@@ -1,11 +1,6 @@
-import asyncio
-import base64
 import json
 import os
-import pickle
-from asyncio import CancelledError
-from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Sequence
-from contextlib import suppress
+from collections.abc import AsyncGenerator, Sequence
 from io import BytesIO
 from pathlib import PosixPath
 from typing import Annotated, Any, Literal
@@ -18,7 +13,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Path,
     Query,
@@ -28,15 +22,12 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.security import APIKeyHeader
-from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
-    SecretStr,
     ValidationError,
     create_model,
     field_validator,
@@ -52,7 +43,6 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 from starlette.templating import Jinja2Templates
-from tblib import pickling_support
 
 from generic_rag.app import APP_NAME, APP_VERSION
 from generic_rag.app.settings import ApplicationSettings
@@ -69,21 +59,6 @@ from generic_rag.types import Document, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 
 _channel = APIRouter()
-
-
-async def _setup_channel_scope(
-    api_key: Annotated[
-        str,
-        Depends(
-            APIKeyHeader(name="Api-Key", scheme_name="Api-Key", description="Authorization with DIAL api key")
-        ),
-    ],
-    dial_application_id: Annotated[
-        str | None, Header(alias="x-dial-application-id", include_in_schema=False)
-    ] = None,
-):
-    async with ChannelBindings(SecretStr(api_key), dial_application_id).scope.adefine():
-        yield
 
 
 def get_pagination(
@@ -509,95 +484,6 @@ async def import_channel_archive(
     )
 
 
-@_channel.post("/jobs/documents/{id}/reindex", include_in_schema=False, response_class=EventSourceResponse)
-async def run_document_reindex(  # noqa: PLR0913
-    request: Request,
-    document_id: Annotated[int, Path(alias="id", description="id of the document")],
-    index_names: Annotated[
-        set[str],
-        Query(
-            alias="index",
-            default_factory=set,
-            description="names of indexes to update (if not defined - all indexes will be updated)",
-        ),
-    ],
-    force: Annotated[
-        bool,
-        Query(
-            description=(
-                "perform whole process, including document re-processing and rebuilding of all indexes "
-                "(in this case `index_names` parameter will be ignored); it not set, document processing "
-                "will be performed only if the document wasn't processed yet"
-            )
-        ),
-    ] = False,
-    facade_service: Inject[FacadeService] = NotImplemented,
-):
-    async def _check_connection():
-        return not await request.is_disconnected()
-
-    async for event in run_as_event_stream_helper(
-        facade_service.reindex_document(document_id, index_names or None, force, background=False),
-        _check_connection,
-    ):
-        yield event
-
-
-@_channel.post("/jobs/archive/create", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_creation(request: Request, facade_service: Inject[FacadeService]):
-    async def _check_connection():
-        return not await request.is_disconnected()
-
-    async for event in run_as_event_stream_helper(
-        facade_service.create_channel_export_archive(background=False), _check_connection
-    ):
-        yield event
-
-
-@_channel.post("/jobs/archive/import", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_import(
-    url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
-):
-    async def _check_connection():
-        return not await request.is_disconnected()
-
-    async for event in run_as_event_stream_helper(
-        facade_service.import_channel_archive(url), _check_connection
-    ):
-        yield event
-
-
-async def run_as_event_stream_helper[T](
-    coro: Coroutine[Any, Any, T], check_connection: Callable[..., Awaitable[bool]]
-) -> AsyncGenerator[ServerSentEvent]:
-    """
-    Run given coroutine as a task and yield its result, exception (if any)
-    and heartbeat messages as Server Sent Events (SSE).
-
-    :param coro: the target Coroutine object
-    :param check_connection: a function called to check of the client is still connected
-    """
-    task = asyncio.create_task(coro)
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="heartbeat")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if not await check_connection():
-                break
-        yield ServerSentEvent(event="message", data=task.result())
-    except Exception as e:
-        pickling_support.install(e)
-        yield ServerSentEvent(
-            event="exception",
-            data=base64.b64encode(pickle.dumps(e)).decode(),
-        )
-    finally:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-
-
 class ChannelConfigMixin(BaseModel):
     """Additional properties for a channel."""
 
@@ -608,7 +494,7 @@ class ChannelConfigMixin(BaseModel):
 async def _get_channel_router(channel_service: ChannelService = NotImplemented) -> APIRouter:
     router = APIRouter(
         prefix="/channel",
-        dependencies=[Depends(_setup_channel_scope)],
+        dependencies=[Depends(ChannelBindings.fastapi_auth_dep)],
         responses={
             HTTP_422_UNPROCESSABLE_CONTENT: {},
         },
