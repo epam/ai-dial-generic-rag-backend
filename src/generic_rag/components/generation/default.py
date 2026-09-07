@@ -56,6 +56,16 @@ class DefaultAnswerGeneratorConfig(BaseModel):
             "instructions and corresponding metadata properties will be added to default system prompt."
         ),
     )
+    current_date: datetime.date | None = Field(
+        default=None,
+        description=(
+            "The date the question is answered as of, put into the prompt instead of today's date. "
+            "Set it to replay old questions reproducibly, so that a phrase such as "
+            "'the latest report' is read against the date the documents were current at, rather "
+            "than against the wall clock. Leave it unset outside evals and tests, and today's "
+            "date is used."
+        ),
+    )
 
 
 class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: list[BaseMessage]](
@@ -89,7 +99,8 @@ class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: l
     # noinspection method-overriding
     async def ainvoke(self, chain_input: Input, *args, **kwargs: Any) -> Output:
         context = await self._get_context_elements(chain_input.found_items)
-        today = datetime.datetime.now(datetime.UTC).date().isoformat()
+        current_date = self._generation_config.current_date or datetime.datetime.now(datetime.UTC).date()
+        today = current_date.isoformat()
 
         return [
             SystemMessage(content=self._system_prompt),

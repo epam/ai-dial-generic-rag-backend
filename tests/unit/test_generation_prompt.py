@@ -85,6 +85,16 @@ async def test_current_date_precedes_the_query():
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", today)
 
 
+async def test_configured_current_date_replaces_today():
+    messages = await _build(
+        "q", [_document(_text_chunk("CHUNK_BODY"))], current_date=datetime.date(2025, 3, 15)
+    )
+    prompt = _human_text(messages)
+
+    assert prompt.startswith("<current_date>2025-03-15</current_date><query>")
+    assert datetime.datetime.now(datetime.UTC).date().isoformat() not in prompt
+
+
 async def test_query_precedes_the_context_block():
     messages = await _build("q", [_document(_text_chunk("CHUNK_BODY"))])
     prompt = _human_text(messages)
