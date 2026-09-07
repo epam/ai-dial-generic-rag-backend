@@ -63,6 +63,7 @@ _channel = APIRouter()
 
 
 SORT_REGEX = re.compile(r"^(?P<field>[\w-]+)(,(?P<direction>asc|desc))?$")
+FILTER_REGEX = re.compile(r"(\w+)\[(\w+)\]")
 
 
 def sort_dep(
@@ -79,6 +80,34 @@ def sort_dep(
         for item in sort
         if (match := SORT_REGEX.match(item)) is not None
     ]
+
+
+async def matcher_dep(request: Request) -> DocumentMatcherConfig | None:
+    data = {}
+    for key, value in request.query_params.multi_items():
+        if match := FILTER_REGEX.match(key):
+            field, operator = match.groups()
+            field_options = data.setdefault(field, {})
+
+            if isinstance(field_options.get(operator), list):
+                field_options[operator].append(value)
+            elif operator in field_options:
+                field_options[operator] = [field_options[operator], value]
+            else:
+                field_options[operator] = value
+
+    if data:
+        model = await DocumentMatcherConfig.get_dynamic_model()
+        try:
+            return model.model_validate({
+                "filters": [
+                    {k: v.get("eq", v) for k, v in data.items()},
+                ]
+            })
+        except ValidationError as e:
+            raise RequestValidationError(e.errors()) from e
+
+    return None
 
 
 def pagination_dep(
@@ -110,10 +139,11 @@ async def retrieval_request_schema(retrieval_service: Inject[RetrievalService]):
 async def list_documents(
     pagination: Annotated[Pagination, Depends(pagination_dep)],
     sort: Annotated[list[SortBy], Depends(sort_dep)],
+    matcher_config: Annotated[DocumentMatcherConfig | None, Depends(matcher_dep)],
     document_service: Inject[DocumentService],
 ) -> PaginatedResults[Document]:
     """List all documents uploaded to the channel."""
-    return await document_service.list_documents(pagination, sort=sort)
+    return await document_service.list_documents(pagination, matcher_config, sort)
 
 
 @_channel.post("/documents", tags=["documents"], status_code=HTTP_201_CREATED)
