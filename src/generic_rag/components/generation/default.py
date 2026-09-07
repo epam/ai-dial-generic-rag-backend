@@ -1,12 +1,13 @@
 import datetime
 import logging
-from typing import Any
+from abc import ABC
+from typing import Annotated, Any
 
 from injection import inject
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from generic_rag.channel import Channel
 from generic_rag.components.generation.prompts import DefaultGenerationPrompt
@@ -38,6 +39,32 @@ class DefaultChatPromptChainInputSchema(BaseModel):
     found_items: list[RetrievedDocument]
 
 
+class DefaultAnswerGeneratorRequest(BaseModel, ABC):
+    """Request-specific options of :class:`DefaultAnswerGenerator`."""
+
+    @classmethod
+    async def get_dynamic_model[T: DefaultAnswerGeneratorRequest](cls: type[T]) -> type[T]:
+        # noinspection PyTypeChecker
+        return create_model(
+            cls.__name__,
+            __base__=cls,
+            __doc__=cls.__doc__,
+            current_date=Annotated[
+                datetime.date | None,
+                Field(
+                    default=None,
+                    description=(
+                        "The date the question is answered as of, put into the prompt instead of "
+                        "today's date. Set it to replay an old question reproducibly, so that "
+                        "wording such as the latest report is read against the date the documents "
+                        "were current at rather than against the wall clock. When it is not set, "
+                        "today's date is used."
+                    ),
+                ),
+            ],
+        )
+
+
 class DefaultAnswerGeneratorConfig(BaseModel):
     """Configuration for the chat chain which generates the answer for the user question."""
 
@@ -56,16 +83,28 @@ class DefaultAnswerGeneratorConfig(BaseModel):
             "instructions and corresponding metadata properties will be added to default system prompt."
         ),
     )
-    current_date: datetime.date | None = Field(
-        default=None,
-        description=(
-            "The date the question is answered as of, put into the prompt instead of today's date. "
-            "Set it to replay old questions reproducibly, so that a phrase such as "
-            "'the latest report' is read against the date the documents were current at, rather "
-            "than against the wall clock. Leave it unset outside evals and tests, and today's "
-            "date is used."
-        ),
-    )
+
+    @classmethod
+    @inject
+    async def get_dynamic_model[T: DefaultAnswerGeneratorConfig](
+        cls: type[T], channel: Channel | None = None
+    ) -> type[T]:
+        """
+        Create dynamic model of this configuration.
+
+        There is no channel bound outside of a request, and that is when this model says what a
+        channel may be configured with. The request-specific options are added only for a request,
+        so that a channel cannot be configured with them.
+        """
+        if channel is None:
+            return cls
+
+        # noinspection PyTypeChecker
+        return create_model(
+            cls.__name__,
+            __base__=(cls, await DefaultAnswerGeneratorRequest.get_dynamic_model()),
+            __doc__=cls.__doc__,
+        )
 
 
 class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: list[BaseMessage]](
@@ -99,8 +138,7 @@ class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: l
     # noinspection method-overriding
     async def ainvoke(self, chain_input: Input, *args, **kwargs: Any) -> Output:
         context = await self._get_context_elements(chain_input.found_items)
-        current_date = self._generation_config.current_date or datetime.datetime.now(datetime.UTC).date()
-        today = current_date.isoformat()
+        today = self._current_date().isoformat()
 
         return [
             SystemMessage(content=self._system_prompt),
@@ -112,6 +150,13 @@ class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: l
                 ]
             ),
         ]
+
+    def _current_date(self) -> datetime.date:
+        """The date the answer is generated as of: the one this request set, or today."""
+        config = self._generation_config
+        if isinstance(config, DefaultAnswerGeneratorRequest) and config.current_date is not None:
+            return config.current_date
+        return datetime.datetime.now(datetime.UTC).date()
 
     async def _get_context_elements(self, found_items: list[RetrievedDocument]) -> list[dict[str, Any]]:
         result = [_text_element("<context>")]

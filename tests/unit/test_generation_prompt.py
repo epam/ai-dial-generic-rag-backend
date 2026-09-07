@@ -1,10 +1,13 @@
 import datetime
 import re
+from typing import cast
 
 import pytest
 
+from generic_rag.channel import Channel
 from generic_rag.components.generation.default import (
     DefaultAnswerGeneratorConfig,
+    DefaultAnswerGeneratorRequest,
     DefaultChatPromptChain,
     DefaultChatPromptChainInputSchema,
 )
@@ -47,6 +50,15 @@ def _document(*chunks: AnyChunk, **source) -> RetrievedDocument:
     )
 
 
+async def _request_config_model() -> type[DefaultAnswerGeneratorConfig]:
+    """The configuration model as it is built for a request, which is the one carrying its options.
+
+    Any channel will do: `get_dynamic_model` reads the argument only to tell a request apart from
+    the channel configuration, which is built without one.
+    """
+    return await DefaultAnswerGeneratorConfig.get_dynamic_model(channel=cast(Channel, object()))
+
+
 async def _build(
     query: str,
     documents: list[RetrievedDocument],
@@ -54,7 +66,8 @@ async def _build(
     metadata_schema: dict | None = None,
     **config,
 ):
-    chain = DefaultChatPromptChain(DefaultAnswerGeneratorConfig(**config), metadata_schema or {})
+    config_model = await _request_config_model()
+    chain = DefaultChatPromptChain(config_model(**config), metadata_schema or {})
     return await chain.ainvoke(DefaultChatPromptChainInputSchema(query=query, found_items=documents))
 
 
@@ -93,6 +106,15 @@ async def test_configured_current_date_replaces_today():
 
     assert prompt.startswith("<current_date>2025-03-15</current_date><query>")
     assert datetime.datetime.now(datetime.UTC).date().isoformat() not in prompt
+
+
+async def test_current_date_is_offered_to_a_request_and_not_to_a_channel():
+    request_model = await _request_config_model()
+    channel_model = await DefaultAnswerGeneratorConfig.get_dynamic_model()
+
+    assert "current_date" in request_model.model_fields
+    assert "current_date" not in channel_model.model_fields
+    assert issubclass(request_model, DefaultAnswerGeneratorRequest)
 
 
 async def test_query_precedes_the_context_block():
