@@ -313,4 +313,5 @@ class DialClient(ModelProvider):
             max_retries=config.max_retries,
             callbacks=[LCMessageLogger()],
             timeout=httpx.Timeout(60.0, connect=5.0),
+            reasoning_effort=config.reasoning_effort,
         )
