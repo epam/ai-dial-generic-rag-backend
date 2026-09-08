@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from collections.abc import AsyncGenerator, Sequence
 from io import BytesIO
 from pathlib import PosixPath
@@ -50,7 +51,7 @@ from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
 from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_matcher import DocumentMatcherConfig
-from generic_rag.services.document_service import DocumentService
+from generic_rag.services.document_service import DocumentService, SortBy, SortDirection
 from generic_rag.services.export_service import ExportService
 from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
 from generic_rag.services.metadata_service import MetadataService
@@ -61,7 +62,55 @@ from generic_rag.utils.pagination import PaginatedResults, Pagination
 _channel = APIRouter()
 
 
-def get_pagination(
+SORT_REGEX = re.compile(r"^(?P<field>[\w-]+)(,(?P<direction>asc|desc))?$")
+FILTER_REGEX = re.compile(r"(\w+)\[(\w+)\]")
+
+
+def sort_dep(
+    sort: Annotated[
+        list[Annotated[str, Field(pattern=SORT_REGEX.pattern)]],
+        Query(default_factory=list, description="Sort options defined as `field_name[,asc|desc]`"),
+    ],
+) -> list[SortBy]:
+    return [
+        SortBy(
+            field=match.group("field"),
+            direction=SortDirection(match.group("direction") or "asc"),
+        )
+        for item in sort
+        if (match := SORT_REGEX.match(item)) is not None
+    ]
+
+
+async def matcher_dep(request: Request) -> DocumentMatcherConfig | None:
+    data = {}
+    for key, value in request.query_params.multi_items():
+        if match := FILTER_REGEX.match(key):
+            field, operator = match.groups()
+            field_options = data.setdefault(field, {})
+
+            if isinstance(field_options.get(operator), list):
+                field_options[operator].append(value)
+            elif operator in field_options:
+                field_options[operator] = [field_options[operator], value]
+            else:
+                field_options[operator] = value
+
+    if data:
+        model = await DocumentMatcherConfig.get_dynamic_model()
+        try:
+            return model.model_validate({
+                "filters": [
+                    {k: v.get("eq", v) for k, v in data.items()},
+                ]
+            })
+        except ValidationError as e:
+            raise RequestValidationError(e.errors()) from e
+
+    return None
+
+
+def pagination_dep(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=0)] = 25,
 ) -> Pagination:
@@ -88,11 +137,22 @@ async def retrieval_request_schema(retrieval_service: Inject[RetrievalService]):
 
 @_channel.get("/documents", tags=["documents"])
 async def list_documents(
-    pagination: Annotated[Pagination, Depends(get_pagination)],
+    pagination: Annotated[Pagination, Depends(pagination_dep)],
+    sort: Annotated[list[SortBy], Depends(sort_dep)],
+    matcher_config: Annotated[DocumentMatcherConfig | None, Depends(matcher_dep)],
     document_service: Inject[DocumentService],
 ) -> PaginatedResults[Document]:
-    """List all documents uploaded to the channel."""
-    return await document_service.list_documents(pagination)
+    """
+    List all documents uploaded to the channel.
+
+    This endpoint also supports filtering by document's
+    metadata fields using the syntax: `field_name[operator]=value`.
+
+    The following `operator` values are allowed:
+    * `eq`: for string and string array fields
+    * `start` and `end`: for date fields
+    """
+    return await document_service.list_documents(pagination, matcher_config, sort)
 
 
 @_channel.post("/documents", tags=["documents"], status_code=HTTP_201_CREATED)
