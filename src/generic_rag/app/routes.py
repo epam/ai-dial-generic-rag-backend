@@ -1,9 +1,7 @@
-import asyncio
 import json
 import os
-from asyncio import CancelledError
+import re
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import suppress
 from io import BytesIO
 from pathlib import PosixPath
 from typing import Annotated, Any, Literal
@@ -16,7 +14,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Path,
     Query,
@@ -26,15 +23,12 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.security import APIKeyHeader
-from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
-    SecretStr,
     ValidationError,
     create_model,
     field_validator,
@@ -57,7 +51,7 @@ from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
 from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_matcher import DocumentMatcherConfig
-from generic_rag.services.document_service import DocumentService
+from generic_rag.services.document_service import DocumentService, SortBy, SortDirection
 from generic_rag.services.export_service import ExportService
 from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
 from generic_rag.services.metadata_service import MetadataService
@@ -68,22 +62,55 @@ from generic_rag.utils.pagination import PaginatedResults, Pagination
 _channel = APIRouter()
 
 
-async def _setup_channel_scope(
-    api_key: Annotated[
-        str,
-        Depends(
-            APIKeyHeader(name="Api-Key", scheme_name="Api-Key", description="Authorization with DIAL api key")
-        ),
+SORT_REGEX = re.compile(r"^(?P<field>[\w-]+)(,(?P<direction>asc|desc))?$")
+FILTER_REGEX = re.compile(r"(\w+)\[(\w+)\]")
+
+
+def sort_dep(
+    sort: Annotated[
+        list[Annotated[str, Field(pattern=SORT_REGEX.pattern)]],
+        Query(default_factory=list, description="Sort options defined as `field_name[,asc|desc]`"),
     ],
-    dial_application_id: Annotated[
-        str | None, Header(alias="x-dial-application-id", include_in_schema=False)
-    ] = None,
-):
-    async with ChannelBindings(SecretStr(api_key), dial_application_id).scope.adefine():
-        yield
+) -> list[SortBy]:
+    return [
+        SortBy(
+            field=match.group("field"),
+            direction=SortDirection(match.group("direction") or "asc"),
+        )
+        for item in sort
+        if (match := SORT_REGEX.match(item)) is not None
+    ]
 
 
-def get_pagination(
+async def matcher_dep(request: Request) -> DocumentMatcherConfig | None:
+    data = {}
+    for key, value in request.query_params.multi_items():
+        if match := FILTER_REGEX.match(key):
+            field, operator = match.groups()
+            field_options = data.setdefault(field, {})
+
+            if isinstance(field_options.get(operator), list):
+                field_options[operator].append(value)
+            elif operator in field_options:
+                field_options[operator] = [field_options[operator], value]
+            else:
+                field_options[operator] = value
+
+    if data:
+        model = await DocumentMatcherConfig.get_dynamic_model()
+        try:
+            return model.model_validate({
+                "filters": [
+                    {k: v.get("eq", v) for k, v in data.items()},
+                ]
+            })
+        except ValidationError as e:
+            raise RequestValidationError(e.errors()) from e
+
+    return None
+
+
+def pagination_dep(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=0)] = 25,
 ) -> Pagination:
@@ -110,11 +137,22 @@ async def retrieval_request_schema(retrieval_service: Inject[RetrievalService]):
 
 @_channel.get("/documents", tags=["documents"])
 async def list_documents(
-    pagination: Annotated[Pagination, Depends(get_pagination)],
+    pagination: Annotated[Pagination, Depends(pagination_dep)],
+    sort: Annotated[list[SortBy], Depends(sort_dep)],
+    matcher_config: Annotated[DocumentMatcherConfig | None, Depends(matcher_dep)],
     document_service: Inject[DocumentService],
 ) -> PaginatedResults[Document]:
-    """List all documents uploaded to the channel."""
-    return await document_service.list_documents(pagination)
+    """
+    List all documents uploaded to the channel.
+
+    This endpoint also supports filtering by document's
+    metadata fields using the syntax: `field_name[operator]=value`.
+
+    The following `operator` values are allowed:
+    * `eq`: for string and string array fields
+    * `start` and `end`: for date fields
+    """
+    return await document_service.list_documents(pagination, matcher_config, sort)
 
 
 @_channel.post("/documents", tags=["documents"], status_code=HTTP_201_CREATED)
@@ -399,12 +437,11 @@ async def reindex_document(  # noqa: PLR0913
             )
         ),
     ] = False,
-    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
     facade_service: Inject[FacadeService] = NotImplemented,
 ):
     """Reindex the document with given id."""
     document, background = await facade_service.reindex_document(
-        document_id, index_names or None, force, async_
+        document_id, index_names or None, force, background=True
     )
     if background:
         response.status_code = HTTP_202_ACCEPTED
@@ -478,7 +515,7 @@ async def download_channel_content(
 async def trigger_channel_export(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
     """Trigger creation of the archive with exported data of the channel."""
     return ChannelArchiveResponse(
-        status=await facade_service.create_channel_export_archive(True),
+        status=await facade_service.create_channel_export_archive(background=True),
     )
 
 
@@ -507,46 +544,6 @@ async def import_channel_archive(
     )
 
 
-@_channel.post("/jobs/archive/create", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_creation(request: Request, facade_service: Inject[FacadeService]):
-    task = asyncio.create_task(facade_service.create_channel_export_archive(False))
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="ping")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
-                break
-        yield ServerSentEvent(
-            data=ChannelArchiveResponse(status=task.result()),
-        )
-    except CancelledError:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-        raise
-
-
-@_channel.post("/jobs/archive/import", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_import(
-    url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
-):
-    task = asyncio.create_task(facade_service.import_channel_archive(url))
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="ping")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
-                break
-        yield ServerSentEvent(comment="done")
-    except CancelledError:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-        raise
-
-
 class ChannelConfigMixin(BaseModel):
     """Additional properties for a channel."""
 
@@ -557,7 +554,7 @@ class ChannelConfigMixin(BaseModel):
 async def _get_channel_router(channel_service: ChannelService = NotImplemented) -> APIRouter:
     router = APIRouter(
         prefix="/channel",
-        dependencies=[Depends(_setup_channel_scope)],
+        dependencies=[Depends(ChannelBindings.fastapi_auth_dep)],
         responses={
             HTTP_422_UNPROCESSABLE_CONTENT: {},
         },

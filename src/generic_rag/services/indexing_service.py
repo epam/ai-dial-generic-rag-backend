@@ -40,7 +40,7 @@ class DocumentStatusUpdateHelper:
             try:
                 yield
             except BaseException as e:
-                logger.error(str(e))
+                logger.error(f"Error while {started} document '{self._document_id}': {e}")
                 await self._document_service.set_document_status(self._document_id, DocumentStatus.error)
                 raise e
             else:

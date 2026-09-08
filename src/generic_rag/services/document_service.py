@@ -1,19 +1,22 @@
 import asyncio
+import enum
 import hashlib
 import logging
 import os
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sequence
+from enum import StrEnum
 from pathlib import PosixPath
-from typing import Self
+from typing import ClassVar, Self
 from urllib.parse import unquote
 
 import jsonschema
 from aidial_sdk.exceptions import InvalidRequestError, RequestValidationError, ResourceNotFoundError
 from fastapi import UploadFile
-from injection import scoped
-from pydantic import Field
-from sqlalchemy import and_, func, select, update
+from injection import inject, scoped
+from pydantic import BaseModel, Field
+from sqlalchemy import UnaryExpression, and_, bindparam, func, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import SQLORMExpression
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from generic_rag.channel import Channel
@@ -21,6 +24,7 @@ from generic_rag.db.entities import DocumentEntity
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.scope import ScopeName
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
+from generic_rag.services.metadata_service import MetadataService
 from generic_rag.types import Document, DocumentStatus, FileMetadata, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 from generic_rag.utils.profile import log_execution_time
@@ -28,6 +32,17 @@ from generic_rag.utils.ranking import rank_fusion
 from generic_rag.utils.repository import RepositoryMixin
 
 logger = logging.getLogger(__name__)
+
+
+@enum.unique
+class SortDirection(StrEnum):
+    asc = enum.auto()
+    desc = enum.auto()
+
+
+class SortBy(BaseModel):
+    field: str
+    direction: SortDirection
 
 
 def validate_content_type(content_type: str, supported_content_types: frozenset) -> None:
@@ -48,6 +63,14 @@ def validate_content_type(content_type: str, supported_content_types: frozenset)
 
 
 class DocumentRepository(RepositoryMixin[DocumentEntity]):
+    FIELDS_MAPPING: ClassVar[dict[str, SQLORMExpression]] = {
+        "id": DocumentEntity.document_id,
+        "display_name": DocumentEntity.display_name,
+        "mime_type": DocumentEntity.mime_type,
+        "size": DocumentEntity.size,
+        "status": DocumentEntity.status,
+    }
+
     def __init__(self, channel_key: str):
         self._channel_key = channel_key
 
@@ -102,7 +125,7 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         )
 
     async def list_all(
-        self, matcher: DocumentMatcher | None, offset: int, limit: int
+        self, matcher: DocumentMatcher | None, sort: list[SortBy] | None, pagination: Pagination
     ) -> Sequence[DocumentEntity]:
         if matcher and (matcher_query := matcher.get_query()) is not None:
             where_clause = and_(
@@ -112,12 +135,18 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         else:
             where_clause = DocumentEntity.channel_key == self._channel_key
 
+        order_clause = (
+            [self._get_field_order_expression(item) for item in sort]
+            if sort
+            else [DocumentEntity.document_id.desc()]
+        )
+
         result = await get_current_session().scalars(
             select(DocumentEntity)
             .where(where_clause)
-            .order_by(DocumentEntity.document_id.desc())
-            .offset(offset)
-            .limit(limit)
+            .order_by(*order_clause)
+            .offset(pagination.offset)
+            .limit(pagination.limit)
         )
         return result.all()
 
@@ -159,6 +188,27 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
             .values(status=status)
         )
 
+    @inject
+    def _get_field_order_expression(
+        self, sort: SortBy, metadata_service: MetadataService = NotImplemented
+    ) -> UnaryExpression:
+        sortable_metadata_fields = [k for k, v in metadata_service.get_sortable_fields()]
+
+        if sort.field in self.FIELDS_MAPPING:
+            column = self.FIELDS_MAPPING[sort.field]
+        elif sort.field in set(sortable_metadata_fields):
+            column = DocumentEntity.metadata_[bindparam(sort.field, sort.field)]
+        else:
+            raise InvalidRequestError(
+                f"'{sort.field}': field name is not known or its use for sorting is not supported "
+                f"(only {list(self.FIELDS_MAPPING.keys()) + sortable_metadata_fields} fields are allowed)"
+            )
+
+        if sort.direction == SortDirection.desc:
+            return column.desc()
+
+        return column.asc()
+
 
 class _Document(Document):
     content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes]]] = Field(repr=False, exclude=True)
@@ -199,21 +249,25 @@ class DocumentService:
 
     @transaction
     async def list_documents(
-        self, pagination: Pagination, matcher_config: DocumentMatcherConfig | None = None
+        self,
+        pagination: Pagination,
+        matcher_config: DocumentMatcherConfig | None = None,
+        sort: list[SortBy] | None = None,
     ) -> PaginatedResults[Document]:
         """
         Return list of all documents uploaded to a channel with pagination.
 
         :param pagination: pagination parameters
         :param matcher_config: describes required subset of documents
+        :param sort: sorting options
         """
         matcher = DocumentMatcher(self._channel.channel_key, matcher_config) if matcher_config else None
         results = [
             _Document.from_entity(entity, self._file_storage)
             for entity in await self._repository.list_all(
                 matcher,
-                pagination.offset,
-                pagination.limit,
+                sort,
+                pagination,
             )
         ]
         total_count = await self._repository.get_total_count(matcher)

@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Self
+from typing import Annotated
 
 from annotated_types import Interval
 from pydantic import BaseModel
@@ -19,7 +19,7 @@ class PaginatedResults[T](BaseModel):
     results: Sequence[T]
 
     @classmethod
-    def create(cls, results: Sequence[T], pagination: Pagination, total_count: int) -> Self:
+    def create(cls, results: Sequence[T], pagination: Pagination, total_count: int) -> "PaginatedResults[T]":
         return cls(
             results=results,
             offset=pagination.offset,

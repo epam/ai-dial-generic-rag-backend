@@ -70,8 +70,10 @@ class DateInterval(BaseModel):
     start: datetime.date | Literal["latest"] = None
     end: datetime.date | Literal["latest"] = None
 
+    model_config = ConfigDict(extra="forbid")
+
     @property
-    def latest(self) -> bool:
+    def is_latest(self) -> bool:
         return self.start == "latest" or self.end == "latest"
 
 
@@ -106,6 +108,7 @@ class SingleFilterModel(BaseModel, ABC):
 
         for key, field_info in metadata_service.get_filterable_fields():
             description = f"Match documents whose `{key}` value satisfies the criteria."
+            special_marker: type[EnableFilterMarker] | None = None
 
             if is_date_field(field_info):
                 model_keys[key] = (
@@ -114,23 +117,22 @@ class SingleFilterModel(BaseModel, ABC):
                 )
 
             elif is_string_field(field_info):
-                # noinspection type-hints,bad-argument-type
-                value_type = Literal[tuple(dimensions.get(key))] if dimensions.get(key) else str
-                model_keys[key] = (
-                    Annotated[
-                        value_type,
-                        StringValueFilterMarker,
-                    ],
-                    Field(default=None, description=description),
-                )
+                special_marker = StringValueFilterMarker
 
             elif is_string_array_field(field_info):
-                # noinspection PyTypeHints,bad-argument-type
-                value_type = Literal[tuple(dimensions.get(key))] if dimensions.get(key) else str
+                special_marker = StringArrayValueFilterMarker
+
+            if special_marker:
+                # noinspection type-hints,bad-argument-type
+                value_type = (
+                    Literal[tuple(dimensions.get(key))] | list[Literal[tuple(dimensions.get(key))]]
+                    if dimensions.get(key)
+                    else str | list[str]
+                )
                 model_keys[key] = (
                     Annotated[
                         value_type,
-                        StringArrayValueFilterMarker,
+                        special_marker,
                     ],
                     Field(default=None, description=description),
                 )
@@ -138,7 +140,7 @@ class SingleFilterModel(BaseModel, ABC):
         return create_model(cls.__name__, **model_keys, __base__=cls, __doc__=cls.__doc__)
 
 
-class DocumentMatcherConfig[FilterT: SingleFilterModel, TopNDocumentsT](BaseModel, ABC):
+class DocumentMatcherConfig[FilterT: SingleFilterModel, TopNDocumentsT: TopNDocumentsModel](BaseModel, ABC):
     """Configuration for document matcher."""
 
     filters: list[FilterT] = Field(
@@ -208,7 +210,7 @@ class DocumentMatcher:
 
             value = getattr(filter_entry, field_name)
 
-            if isinstance(value, DateInterval) and value.latest:
+            if isinstance(value, DateInterval) and value.is_latest:
                 latest_fields.append(field_name)
 
             elif (clause := self._get_field_filtering_clause(field_name, value, field_type)) is not None:
@@ -224,7 +226,7 @@ class DocumentMatcher:
             return and_(*result_clauses)
         return true()
 
-    def _get_field_filtering_clause(
+    def _get_field_filtering_clause(  # noqa: PLR0911, C901
         self, name: str, value: Any, field_info: FieldInfo
     ) -> ColumnElement[bool] | None:
         key = bindparam(name, name)
@@ -264,6 +266,22 @@ class DocumentMatcher:
                     .where(
                         DocumentEntity.channel_key == self._channel_key,
                         column(f"{name}_element", is_literal=True) == bindparam(name, value, unique=True),
+                    )
+                )
+
+        elif isinstance(value, list):
+            if any(issubclass(cls, StringValueFilterMarker) for cls in field_info.metadata):
+                return DocumentEntity.metadata_[key].astext.in_(bindparam(name, value, unique=True))
+
+            if any(issubclass(cls, StringArrayValueFilterMarker) for cls in field_info.metadata):
+                return DocumentEntity.document_id.in_(
+                    select(DocumentEntity.document_id)
+                    .select_from(
+                        func.jsonb_array_elements_text(DocumentEntity.metadata_[key]).alias(f"{name}_element")
+                    )
+                    .where(
+                        DocumentEntity.channel_key == self._channel_key,
+                        column(f"{name}_element", is_literal=True).in_(bindparam(name, value, unique=True)),
                     )
                 )
 
