@@ -8,15 +8,15 @@ import pydantic
 import uvicorn
 from dotenv import load_dotenv
 
+from generic_rag.utils.logging import configure_logging
+
 src_path = Path(__file__).parent.parent.absolute()
 sys.path.append(str(src_path))
 
 load_dotenv()
 
-LOG_LEVEL = os.environ.get("LOG_LEVEL", logging.INFO)
-LOG_USE_COLORS = pydantic.TypeAdapter(bool).validate_python(os.getenv("LOG_USE_COLORS", "no"))
-
-from generic_rag.utils.logging import configure_logging  # noqa: E402
+LOG_LEVEL = os.getenv("LOG_LEVEL", logging.INFO)
+LOG_USE_COLORS = pydantic.TypeAdapter(bool).validate_python(os.getenv("LOG_USE_COLORS", "false"))
 
 configure_logging(level=LOG_LEVEL, use_color=LOG_USE_COLORS)
 
