@@ -1,8 +1,8 @@
 import logging
+import os
 import sys
 
 import click
-from aidial_sdk.utils.log_config import LogConfig
 from uvicorn.logging import AccessFormatter, ColourizedFormatter, DefaultFormatter
 
 LOG_FORMAT_PREFIX = "%(asctime)s | %(levelname)s | [%(trace)s] | %(pid)s | %(threadName)s | %(name)s"
@@ -34,15 +34,9 @@ class AccessLogFormatter(AccessFormatter):
 
 
 def configure_logging(level, use_color: bool):
-    # disable loggers configured by dial-sdk,
-    # we will use our own fancy logging instead
-    for name in LogConfig().dict().get("loggers", {}):
-        _logger = logging.getLogger(name)
-        for _handler in _logger.handlers:
-            _logger.removeHandler(_handler)
-            _handler.close()
-        _logger.propagate = True
-        _logger.setLevel(logging.NOTSET)
+    # set these vars to prevent ai-dial-sdk from overriding loggers configuration
+    os.environ.setdefault("OTEL_PYTHON_LOG_CORRELATION", "true")
+    os.environ.setdefault("OTEL_TRACES_EXPORTER", "oltp")
 
     # configure default logger
     default_handler = logging.StreamHandler(stream=sys.stdout)
