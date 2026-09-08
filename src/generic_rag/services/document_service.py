@@ -193,11 +193,10 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         self, sort: SortBy, metadata_service: MetadataService = NotImplemented
     ) -> UnaryExpression:
         sortable_metadata_fields = [k for k, v in metadata_service.get_sortable_fields()]
-        # todo: cache this value to not create it every time
 
         if sort.field in self.FIELDS_MAPPING:
             column = self.FIELDS_MAPPING[sort.field]
-        elif sort.field in sortable_metadata_fields:
+        elif sort.field in set(sortable_metadata_fields):
             column = DocumentEntity.metadata_[bindparam(sort.field, sort.field)]
         else:
             raise InvalidRequestError(
@@ -205,13 +204,10 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
                 f"(only {list(self.FIELDS_MAPPING.keys()) + sortable_metadata_fields} fields are allowed)"
             )
 
-        match sort.direction:
-            case SortDirection.asc:
-                return column.asc()
-            case SortDirection.desc:
-                return column.desc()
+        if sort.direction == SortDirection.desc:
+            return column.desc()
 
-        raise ValueError(f"'{sort.direction}': unknown sort direction")
+        return column.asc()
 
 
 class _Document(Document):

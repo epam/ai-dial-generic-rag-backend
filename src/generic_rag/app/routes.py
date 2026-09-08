@@ -69,7 +69,7 @@ FILTER_REGEX = re.compile(r"(\w+)\[(\w+)\]")
 def sort_dep(
     sort: Annotated[
         list[Annotated[str, Field(pattern=SORT_REGEX.pattern)]],
-        Query(default_factory=list, description="Sort options defined as `field[,asc|desc]`"),
+        Query(default_factory=list, description="Sort options defined as `field_name[,asc|desc]`"),
     ],
 ) -> list[SortBy]:
     return [
@@ -142,7 +142,16 @@ async def list_documents(
     matcher_config: Annotated[DocumentMatcherConfig | None, Depends(matcher_dep)],
     document_service: Inject[DocumentService],
 ) -> PaginatedResults[Document]:
-    """List all documents uploaded to the channel."""
+    """
+    List all documents uploaded to the channel.
+
+    This endpoint also supports filtering by document's
+    metadata fields using the syntax: `field_name[operator]=value`.
+
+    The following `operator` values are allowed:
+    * `eq`: for string and string array fields
+    * `start` and `end`: for date fields
+    """
     return await document_service.list_documents(pagination, matcher_config, sort)
 
 
