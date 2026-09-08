@@ -249,6 +249,24 @@ yarl = ">=1.17.0,<2.0"
 speedups = ["Brotli (>=1.2) ; platform_python_implementation == \"CPython\" and sys_platform != \"android\" and sys_platform != \"ios\"", "aiodns (>=3.3.0) ; sys_platform != \"android\" and sys_platform != \"ios\"", "backports.zstd ; platform_python_implementation == \"CPython\" and python_version < \"3.14\" and sys_platform != \"android\" and sys_platform != \"ios\"", "brotlicffi (>=1.2) ; platform_python_implementation != \"CPython\""]
 
 [[package]]
+name = "aiohttp-sse-client"
+version = "0.2.1"
+description = "A Server-Sent Event python client base on aiohttp"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "aiohttp-sse-client-0.2.1.tar.gz", hash = "sha256:5004e29271624af586158dc7166cb0687a7a5997aab5b808f4b53400e1b72e3b"},
+    {file = "aiohttp_sse_client-0.2.1-py2.py3-none-any.whl", hash = "sha256:42c81ee9213e9fc8bc412b063bac3a813e02e75250c4c8049222234d41c9b024"},
+]
+
+[package.dependencies]
+aiohttp = ">=3"
+attrs = "*"
+multidict = "*"
+yarl = "*"
+
+[[package]]
 name = "aiosignal"
 version = "1.4.0"
 description = "aiosignal: a list of registered asynchronous callbacks"
@@ -7813,6 +7831,18 @@ files = [
 widechars = ["wcwidth"]
 
 [[package]]
+name = "tblib"
+version = "3.2.2"
+description = "Traceback serialization library."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "tblib-3.2.2-py3-none-any.whl", hash = "sha256:26bdccf339bcce6a88b2b5432c988b266ebbe63a4e593f6b578b1d2e723d2b76"},
+    {file = "tblib-3.2.2.tar.gz", hash = "sha256:e9a652692d91bf4f743d4a15bc174c0b76afc750fe8c7b6d195cc1c1d6d2ccec"},
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 description = "Retry code until it succeeds"
@@ -8495,7 +8525,7 @@ description = "Provider of IANA time zone data"
 optional = false
 python-versions = ">=2"
 groups = ["main"]
-markers = "sys_platform == \"win32\" or platform_system != \"Windows\""
+markers = "platform_system != \"Windows\" or sys_platform == \"win32\""
 files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
@@ -9700,4 +9730,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "c9bb04c292786d43a2b588424c7c0248c820e0e81f1378d9d74b0ac2bed5a7e3"
+content-hash = "dbbb0d790729c37d46a109edac6b4cbee5941532e07b47649a3c045123cb3d5c"

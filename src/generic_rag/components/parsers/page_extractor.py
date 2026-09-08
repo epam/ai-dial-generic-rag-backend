@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
@@ -35,8 +36,8 @@ class PageExtractor(DocumentParser[PageExtractorConfig]):
     async def _extract_chunks_gen(self, document: Document) -> AsyncGenerator[ImageChunk]:
         assert document.mime_type in self.supported_mime_types
 
-        with pdfplumber.open(io.BytesIO(await document.get_content())) as pdf:
-            for page_number, page in enumerate(pdf.pages, start=1):
+        with await asyncio.to_thread(pdfplumber.open, io.BytesIO(await document.get_content())) as pdf:
+            for page_number, page in enumerate(await asyncio.to_thread(lambda: pdf.pages), start=1):
                 logger.info(f"processing page {page_number}...")
 
                 image = self._get_page_image(page, scaled_size=self.config.image_size)

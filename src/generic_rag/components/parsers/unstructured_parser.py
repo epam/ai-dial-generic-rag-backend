@@ -1,5 +1,7 @@
+import asyncio
 import io
 import logging
+import os.path
 from collections.abc import AsyncGenerator, AsyncIterable
 from functools import cached_property
 
@@ -46,10 +48,11 @@ class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
     async def _extract_chunks_gen(self, document: Document) -> AsyncGenerator[TextChunk]:
         assert document.mime_type in self.supported_mime_types
 
-        elements = partition(
+        elements = await asyncio.to_thread(
+            partition,
             file=io.BytesIO(await document.get_content()),
             content_type=document.mime_type,
-            metadata_filename=document.display_name,
+            metadata_filename=os.path.basename(document.display_name),
             strategy="fast",
             chunking_strategy="by_title",
             multipage_sections=False,

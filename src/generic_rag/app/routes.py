@@ -1,9 +1,6 @@
-import asyncio
 import json
 import os
-from asyncio import CancelledError
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import suppress
 from io import BytesIO
 from pathlib import PosixPath
 from typing import Annotated, Any, Literal
@@ -16,7 +13,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Path,
     Query,
@@ -26,15 +22,12 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.security import APIKeyHeader
-from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import inject
 from injection.ext.fastapi import Inject
 from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
-    SecretStr,
     ValidationError,
     create_model,
     field_validator,
@@ -66,21 +59,6 @@ from generic_rag.types import Document, FileStorage
 from generic_rag.utils.pagination import PaginatedResults, Pagination
 
 _channel = APIRouter()
-
-
-async def _setup_channel_scope(
-    api_key: Annotated[
-        str,
-        Depends(
-            APIKeyHeader(name="Api-Key", scheme_name="Api-Key", description="Authorization with DIAL api key")
-        ),
-    ],
-    dial_application_id: Annotated[
-        str | None, Header(alias="x-dial-application-id", include_in_schema=False)
-    ] = None,
-):
-    async with ChannelBindings(SecretStr(api_key), dial_application_id).scope.adefine():
-        yield
 
 
 def get_pagination(
@@ -399,12 +377,11 @@ async def reindex_document(  # noqa: PLR0913
             )
         ),
     ] = False,
-    async_: Annotated[bool, Query(alias="async", include_in_schema=False)] = True,
     facade_service: Inject[FacadeService] = NotImplemented,
 ):
     """Reindex the document with given id."""
     document, background = await facade_service.reindex_document(
-        document_id, index_names or None, force, async_
+        document_id, index_names or None, force, background=True
     )
     if background:
         response.status_code = HTTP_202_ACCEPTED
@@ -478,7 +455,7 @@ async def download_channel_content(
 async def trigger_channel_export(facade_service: Inject[FacadeService]) -> ChannelArchiveResponse:
     """Trigger creation of the archive with exported data of the channel."""
     return ChannelArchiveResponse(
-        status=await facade_service.create_channel_export_archive(True),
+        status=await facade_service.create_channel_export_archive(background=True),
     )
 
 
@@ -507,46 +484,6 @@ async def import_channel_archive(
     )
 
 
-@_channel.post("/jobs/archive/create", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_creation(request: Request, facade_service: Inject[FacadeService]):
-    task = asyncio.create_task(facade_service.create_channel_export_archive(False))
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="ping")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
-                break
-        yield ServerSentEvent(
-            data=ChannelArchiveResponse(status=task.result()),
-        )
-    except CancelledError:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-        raise
-
-
-@_channel.post("/jobs/archive/import", include_in_schema=False, response_class=EventSourceResponse)
-async def run_channel_archive_import(
-    url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
-):
-    task = asyncio.create_task(facade_service.import_channel_archive(url))
-    try:
-        while not task.done():
-            yield ServerSentEvent(comment="ping")
-            with suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
-            if await request.is_disconnected():
-                break
-        yield ServerSentEvent(comment="done")
-    except CancelledError:
-        if task.cancel():
-            with suppress(CancelledError):
-                await task
-        raise
-
-
 class ChannelConfigMixin(BaseModel):
     """Additional properties for a channel."""
 
@@ -557,7 +494,7 @@ class ChannelConfigMixin(BaseModel):
 async def _get_channel_router(channel_service: ChannelService = NotImplemented) -> APIRouter:
     router = APIRouter(
         prefix="/channel",
-        dependencies=[Depends(_setup_channel_scope)],
+        dependencies=[Depends(ChannelBindings.fastapi_auth_dep)],
         responses={
             HTTP_422_UNPROCESSABLE_CONTENT: {},
         },
