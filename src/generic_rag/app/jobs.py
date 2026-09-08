@@ -1,27 +1,36 @@
 import asyncio
+import base64
 import dataclasses
 import enum
 import functools
 import logging
+import pickle
 import signal
 from abc import ABC, abstractmethod
 from asyncio import CancelledError
+from collections.abc import AsyncGenerator, Coroutine
 from contextlib import AsyncExitStack, suppress
 from enum import StrEnum
+from http import HTTPMethod
 from types import FrameType
-from typing import Literal, overload
+from typing import Annotated, Literal, overload
 from urllib.parse import urljoin
 
 import asyncpg
 from aidial_sdk.exceptions import InvalidRequestError
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
+from aiohttp_sse_client.client import EventSource
 from async_lru import alru_cache
-from fastapi import FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Path, Request
+from fastapi.params import Form
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import afind_instance, inject, singleton
-from pgqueuer import DatabaseRetryEntrypointExecutor, Job, PgQueuer, Queries
+from injection.ext.fastapi import Inject
+from pgqueuer import Job, PgQueuer, Queries
 from pgqueuer.adapters.tracing.opentelemetry import OpenTelemetryTracing
 from pgqueuer.adapters.web import create_web_router
 from pgqueuer.core.executors import (
+    DatabaseRetryEntrypointExecutor,
     EntrypointExecutor,
     EntrypointExecutorParameters,
 )
@@ -29,8 +38,11 @@ from pgqueuer.domain.errors import DuplicateJobError
 from pgqueuer.domain.models import Context
 from pgqueuer.ports.tracing import set_tracing_class
 from pydantic import BaseModel
+from tblib import pickling_support
+from tblib.decorators import reraise
 
 from generic_rag.app.settings import ApplicationSettings
+from generic_rag.scope import ChannelBindings
 from generic_rag.utils.generics import resolve_generic_arg
 
 logger = logging.getLogger(__name__)
@@ -73,8 +85,110 @@ class JobRunner[T: JobPayload](ABC):
         )
         self._headers = {"api-key": settings.dial_api_key.get_secret_value()}
 
+    async def _event_stream_helper(self, url: str, method: HTTPMethod, **kwargs):
+        """
+        Perform a request to a Job execution endpoint which should return
+        `text/event-stream` for long-running operations, and yield received events.
+
+        :param url: specifies the URL to which to connect
+        :param method: an HTTP method to use
+        :param kwargs: keyword arguments to pass to underlying EventSource instance
+        """
+
+        def _raise_stop_async_iteration():
+            raise StopAsyncIteration
+
+        async with EventSource(
+            url,
+            option={"method": method.value},
+            session=self._client_session,
+            headers=self._headers,
+            # by default, ClientSession uses total timeout of 5 minutes, and if the operation
+            # takes longer it will raise TimeoutError; EventSource would automatically reconnect
+            # in such cases, but in case of DIAL application route the per-request api-key will
+            # immediately become invalid causing the whole operation to fail,
+            # so here we disable total timeout to allow the stream to run indefinitely
+            timeout=ClientTimeout(total=None, sock_connect=30, sock_read=30),
+            # prevent reconnection attempt if the server closes the connection
+            on_error=_raise_stop_async_iteration,
+            **kwargs,
+        ) as event_source:
+            async for event in event_source:
+                if event.type == "exception":
+                    exc = pickle.loads(base64.b64decode(event.data))
+                    logger.warning(f"Got exception from server: {exc}")
+                    reraise(type(exc), exc)
+
+                yield event
+
     @abstractmethod
     async def run(self, context: Context): ...
+
+
+async def run_as_event_stream(coro: Coroutine, request: Request) -> AsyncGenerator[ServerSentEvent]:
+    """
+    Run given coroutine as a task and yield its result,
+    exception (if any) and heartbeat messages as Server Sent Events (SSE).
+
+    :param coro: the target Coroutine object
+    :param request: the instance of incoming request
+    """
+    task = asyncio.create_task(coro)
+    try:
+        while not task.done():
+            yield ServerSentEvent(comment="heartbeat")
+            with suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            if await request.is_disconnected():
+                break
+        yield ServerSentEvent(event="message", data=task.result())
+    except Exception as e:
+        pickling_support.install(e)
+        yield ServerSentEvent(
+            event="exception",
+            data=base64.b64encode(pickle.dumps(e)).decode(),
+        )
+    finally:
+        if task.cancel():
+            with suppress(CancelledError):
+                await task
+
+
+def create_jobs_router() -> APIRouter:
+    """Build APIRouter with endpoints called by jobs to perform required actions."""
+    from generic_rag.services.facade_service import FacadeService  # noqa: PLC0415
+
+    _router = APIRouter()
+
+    @_router.post("/documents/{id}/reindex", response_class=EventSourceResponse)
+    async def _document_reindex(
+        request: Request,
+        document_id: Annotated[int, Path(alias="id")],
+        index_names: Annotated[set[str], Form(alias="index", default_factory=set)],
+        force: Annotated[bool, Form()] = False,
+        facade_service: Inject[FacadeService] = NotImplemented,
+    ):
+        async for event in run_as_event_stream(
+            facade_service.reindex_document(document_id, index_names or None, force, background=False),
+            request,
+        ):
+            yield event
+
+    @_router.post("/archive/create", response_class=EventSourceResponse)
+    async def _channel_archive_create(request: Request, facade_service: Inject[FacadeService]):
+        async for event in run_as_event_stream(
+            facade_service.create_channel_export_archive(background=False), request
+        ):
+            yield event
+
+    @_router.post("/archive/import", response_class=EventSourceResponse)
+    async def run_channel_archive_import(
+        url: Annotated[str, Form()], request: Request, facade_service: Inject[FacadeService]
+    ):
+        async for event in run_as_event_stream(facade_service.import_channel_archive(url), request):
+            yield event
+
+    return _router
 
 
 class IndexDocumentJobPayload(JobPayload):
@@ -85,22 +199,20 @@ class IndexDocumentJobPayload(JobPayload):
 
 class IndexDocumentJobRunner(JobRunner[IndexDocumentJobPayload]):
     async def run(self, context: Context):
-        request_url = f"{self._application_route_url}/channel/documents/{self._payload.document_id}/reindex"
+        url = f"{self._application_route_url}/channel/jobs/documents/{self._payload.document_id}/reindex"
+        data = []
 
-        params = [("async", "false")]
         if self._payload.index_names:
-            params.extend(("index", name) for name in self._payload.index_names)
+            data.extend(("index", name) for name in self._payload.index_names)
         if self._payload.force:
-            params.append(("force", "true"))
+            data.append(("force", "true"))
 
         logger.info(
-            f"indexing document with {self._payload.document_id=} of '{self._payload.application_id}'"
+            f"indexing document with id={self._payload.document_id} of '{self._payload.application_id}'"
         )
 
-        async with self._client_session.put(
-            url=request_url, params=params, headers=self._headers
-        ) as response:
-            response.raise_for_status()
+        async for event in self._event_stream_helper(url, HTTPMethod.POST, data=data):
+            logger.info(f"received event: {event}")
 
         logger.info("done")
 
@@ -113,15 +225,8 @@ class CreateChannelArchiveJobRunner(JobRunner[CreateChannelArchiveJobPayload]):
         request_url = f"{self._application_route_url}/channel/jobs/archive/create"
 
         with context.cancellation:
-            async with self._client_session.post(
-                request_url, headers=self._headers | {"accept": "text/event-stream"}
-            ) as response:
-                response.raise_for_status()
-                assert response.content_type == "text/event-stream"
-
-                async for line in response.content:
-                    if message := line.decode().strip():
-                        logger.info(message)
+            async for event in self._event_stream_helper(request_url, HTTPMethod.POST):
+                logger.info(f"received event: {event}")
 
             logger.info("done")
 
@@ -135,31 +240,24 @@ class ImportChannelArchiveJobRunner(JobRunner[ImportChannelArchiveJobPayload]):
         request_url = f"{self._application_route_url}/channel/jobs/archive/import"
 
         with context.cancellation:
-            async with self._client_session.post(
-                request_url,
-                data={"url": self._payload.archive_url},
-                headers=self._headers | {"accept": "text/event-stream"},
-            ) as response:
-                response.raise_for_status()
-                assert response.content_type == "text/event-stream"
-
-                async for line in response.content:
-                    if message := line.decode().strip():
-                        logger.info(message)
+            async for event in self._event_stream_helper(
+                request_url, HTTPMethod.POST, data={"url": self._payload.archive_url}
+            ):
+                logger.info(f"received event: {event}")
 
             logger.info("done")
 
 
 @enum.unique
 class EntrypointName(StrEnum):
-    index_document = "document.index"
+    reindex_document = "document.reindex"
     create_channel_archive = "channel.archive.create"
     import_channel_archive = "channel.archive.import"
 
 
 @overload
 async def enqueue_job(
-    entrypoint: Literal[EntrypointName.index_document],
+    entrypoint: Literal[EntrypointName.reindex_document],
     payload: IndexDocumentJobPayload,
     *,
     dedupe_key: str | None = None,
@@ -261,7 +359,7 @@ def _executor_factory(params: EntrypointExecutorParameters) -> EntrypointExecuto
 async def pgqueuer_factory(asyncpg_pool: asyncpg.Pool) -> PgQueuer:
     pgq = PgQueuer.from_asyncpg_pool(asyncpg_pool)
 
-    @pgq.entrypoint(EntrypointName.index_document, executor_factory=_executor_factory, concurrency_limit=2)
+    @pgq.entrypoint(EntrypointName.reindex_document, executor_factory=_executor_factory, concurrency_limit=2)
     async def index_document_entrypoint(job: Job, context: Context):
         await IndexDocumentJobRunner(job).run(context)
 
@@ -299,7 +397,7 @@ async def _worker_main(stop_event: asyncio.Event, pgq: PgQueuer = NotImplemented
 
         pgq.shutdown.clear()
 
-        logger.info("Restarting worker task")
+        logger.info("Recreating worker task")
         worker_task = asyncio.create_task(pgq.run(shutdown_on_listener_failure=True))
         worker_task.add_done_callback(_on_task_done)
 
@@ -351,6 +449,11 @@ async def run_worker(exit_stack: AsyncExitStack = NotImplemented):
 async def setup_jobs(app: FastAPI, queries: Queries = NotImplemented):
     await queries.upgrade()
     app.state.pgq_queries = queries
+    app.include_router(
+        create_jobs_router(),
+        prefix="/channel/jobs",
+        dependencies=[Depends(ChannelBindings.fastapi_auth_dep)],
+    )
     app.include_router(
         create_web_router(include_sse=False),
         prefix="/dashboard",
