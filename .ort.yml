@@ -6,9 +6,9 @@ excludes:
 
 resolutions:
   rule_violations:
-    - message: ".*PyPI::aidial-sdk:0\\.37\\.0.*"
+    - message: ".*PyPI::aidial-sdk:0\\.40\\.0.*"
       reason: "CANT_FIX_EXCEPTION"
-      comment: "Apache License 2.0: https://github.com/epam/ai-dial-sdk/blob/0.37.0/LICENSE"
+      comment: "Apache License 2.0: https://github.com/epam/ai-dial-sdk/blob/0.40.0/LICENSE"
     - message: ".*PyPI::fastapi:0\\.138\\.2.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "MIT License: https://github.com/fastapi/fastapi/blob/0.138.2/LICENSE"
@@ -220,9 +220,9 @@ resolutions:
     - message: ".*PyPI::jaraco-context:6\\.1\\.2.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "MIT License: https://github.com/jaraco/jaraco.context/blob/v6.1.2/pyproject.toml#L24"
-    - message: ".*PyPI::scipy:1\\.16\\.1.*"
+    - message: ".*PyPI::scipy:1\\.18\\.1.*"
       reason: "CANT_FIX_EXCEPTION"
-      comment: "BSD 3-Clause License: https://github.com/scipy/scipy/blob/v1.16.1/LICENSE.txt"
+      comment: "BSD 3-Clause License: https://github.com/scipy/scipy/blob/v1.18.1/LICENSE.txt"
     - message: ".*PyPI::caio:0\\.9\\.25.*"
       reason: "CANT_FIX_EXCEPTION"
       comment: "Apache License 2.0: https://github.com/mosquito/caio/blob/0.9.25/COPYING"
