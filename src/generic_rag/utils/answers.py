@@ -279,7 +279,7 @@ def create_attachment(doc: RetrievedDocument, citation_index: int):
             data += f"{chunk.text}\n\n"
 
         elif isinstance(chunk, ImageChunk):
-            image_title = f"Image of page #{chunk.page_number}"
+            image_title = f"Image of page #{chunk.metadata.page_number}"
             image_url = create_thumbnail(chunk)
             data += f'![{image_title}]({image_url} "{image_title}")\n\n'
 

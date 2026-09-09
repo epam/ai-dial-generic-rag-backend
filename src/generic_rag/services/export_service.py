@@ -18,7 +18,7 @@ from fastapi import UploadFile
 from injection import scoped
 from msgpack import pack, unpack
 from opentelemetry.trace import get_tracer
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field, RootModel, ValidationError, field_validator
 from starlette.datastructures import Headers
 
 from generic_rag.channel import Channel
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class DocumentRecord(BaseModel):
     """Data of exported document."""
 
-    version: Literal["v2"] = "v2"
+    version: Literal["v2", "v3"] = "v3"
     filename: str
     folder: str
     mime_type: str
@@ -46,6 +46,20 @@ class DocumentRecord(BaseModel):
     content_bytes: bytes
     chunks: list[AnyChunk]
     indexes: dict[str, list[IndexRecord[Any]]]
+
+    @field_validator("chunks", mode="before")
+    @classmethod
+    def _load_chunk_metadata(cls, value: Any) -> Any:
+        def _convert(chunk: Any) -> Any:
+            if isinstance(chunk, dict) and "page_number" in chunk and "metadata" not in chunk:
+                chunk["metadata"] = {"page_number": chunk["page_number"]}
+                del chunk["page_number"]
+            return chunk
+
+        if isinstance(value, list):
+            return [_convert(item) for item in value]
+
+        return value
 
     @classmethod
     async def create(
@@ -164,9 +178,17 @@ class ExportService:
         :param stream: binary stream with serialized data of DocumentRecord
         :param overwrite: allow to overwrite the document that already exists (if any)
         """
-        record = DocumentRecord.model_validate(
-            await asyncio.to_thread(unpack, stream),
-        )
+        try:
+            record = DocumentRecord.model_validate(
+                await asyncio.to_thread(unpack, stream),
+            )
+        except ValidationError as e:
+            raise InvalidRequestError(
+                "The document bundle is not compatible with current version of the application.",
+                detail=e.errors(include_url=False, include_input=False),
+            ) from e
+        except ValueError as e:
+            raise InvalidRequestError("The document bundle is corrupted.") from e
 
         logger.info(f"importing document '{os.path.join(record.folder, record.filename)}'")
 

@@ -63,12 +63,20 @@ class ChunkMetadata(BaseModel):
 
     page_number: int = Field(description="number of page where this chunk was extracted")
 
+    model_config = ConfigDict(
+        extra="allow",
+        frozen=True,
+    )
 
-class TextChunk(ChunkMetadata, ChunkRef):
+
+class TextChunk(ChunkRef):
     """A piece of text information."""
 
     chunk_type: Literal[ChunkType.text] = ChunkType.text
     text: str
+    metadata: ChunkMetadata = Field(
+        description="the metadata associated with the chunk",
+    )
 
 
 @enum.unique
@@ -80,13 +88,16 @@ class ImageType(StrEnum):
     diagram = enum.auto()
 
 
-class ImageChunk(ChunkMetadata, ChunkRef):
+class ImageChunk(ChunkRef):
     """A piece of graphical information."""
 
     chunk_type: Literal[ChunkType.image] = ChunkType.image
     image_type: ImageType = Field(..., description="type of this chunk's image")
     mime_type: str = Field(..., description="MIME type of this chunk's content")
     content: bytes = Field(..., description="the content of this chunk", repr=False)
+    metadata: ChunkMetadata = Field(
+        description="the metadata associated with the chunk",
+    )
 
     model_config = ConfigDict(
         ser_json_bytes="base64",

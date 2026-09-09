@@ -182,7 +182,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
                 chunks=[chunk],
                 source_id=source.id,
                 source_url=source.url,
-                source_page_number=chunk.page_number,
+                source_page_number=chunk.metadata.page_number,
                 source_display_name=source.display_name,
                 source_metadata=source.metadata,
             )
@@ -253,7 +253,7 @@ def _get_chunks_summary(retrieved_docs: Sequence[RetrievedDocument]):
             {
                 "#": f"[{i}]",
                 "source_name": document.source_display_name,
-                "page_number": chunk.page_number,
+                "page_number": chunk.metadata.page_number,
             }
             | (document.model_extra or {})
             | chunk.get_identity().model_dump()

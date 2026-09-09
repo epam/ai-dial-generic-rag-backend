@@ -8,13 +8,13 @@ from collections.abc import AsyncIterable, Collection, Iterable
 from typing import Literal, overload
 
 from injection import scoped
-from sqlalchemy import ScalarResult, delete, select, tuple_
+from sqlalchemy import INTEGER, ScalarResult, delete, func, select, tuple_
 
 from generic_rag.channel import Channel
 from generic_rag.db.entities import ImageChunkEntity, TextChunkEntity
 from generic_rag.db.session import get_current_session, transaction
 from generic_rag.scope import ScopeName
-from generic_rag.types import AnyChunk, ChunkRef, ChunkType, FileStorage, ImageChunk, TextChunk
+from generic_rag.types import AnyChunk, ChunkMetadata, ChunkRef, ChunkType, FileStorage, ImageChunk, TextChunk
 from generic_rag.utils.profile import log_execution_time
 
 _semaphore = asyncio.Semaphore(10)
@@ -62,7 +62,7 @@ class ChunkService:
                 document_id=chunk.document_id,
                 chunk_id=chunk.chunk_id,
                 text=chunk.text,
-                page_number=chunk.page_number,
+                metadata_=chunk.metadata.model_dump(mode="json"),
             )
         if isinstance(chunk, ImageChunk):
             image_url = await self._upload_image(chunk)
@@ -73,7 +73,7 @@ class ChunkService:
                 image_type=chunk.image_type,
                 image_url=image_url,
                 mime_type=chunk.mime_type,
-                page_number=chunk.page_number,
+                metadata_=chunk.metadata.model_dump(mode="json"),
             )
         raise ValueError(f"unexpected argument: {chunk!r}")
 
@@ -257,7 +257,10 @@ class ChunkService:
                 select(TextChunkEntity)
                 .where(
                     TextChunkEntity.channel_key == self._channel_key,
-                    tuple_(TextChunkEntity.document_id, TextChunkEntity.page_number).in_(doc_pages),
+                    tuple_(
+                        TextChunkEntity.document_id,
+                        func.cast(TextChunkEntity.metadata_["page_number"], INTEGER),
+                    ).in_(doc_pages),
                 )
                 .order_by(TextChunkEntity.document_id, TextChunkEntity.chunk_id)
             )
@@ -268,7 +271,10 @@ class ChunkService:
                 select(ImageChunkEntity)
                 .where(
                     ImageChunkEntity.channel_key == self._channel_key,
-                    tuple_(ImageChunkEntity.document_id, ImageChunkEntity.page_number).in_(doc_pages),
+                    tuple_(
+                        ImageChunkEntity.document_id,
+                        func.cast(ImageChunkEntity.metadata_["page_number"], INTEGER),
+                    ).in_(doc_pages),
                 )
                 # ordered by `chunk_id` for the same reason as the text chunks above
                 .order_by(ImageChunkEntity.document_id, ImageChunkEntity.chunk_id)
@@ -289,8 +295,10 @@ class ChunkService:
             return TextChunk(
                 document_id=entity.document_id,
                 chunk_id=entity.chunk_id,
-                page_number=entity.page_number,
                 text=entity.text,
+                metadata=ChunkMetadata.model_validate(
+                    entity.metadata_,
+                ),
             )
         if isinstance(entity, ImageChunkEntity):
             async with _semaphore:
@@ -300,9 +308,11 @@ class ChunkService:
             return ImageChunk(
                 document_id=entity.document_id,
                 chunk_id=entity.chunk_id,
-                page_number=entity.page_number,
                 image_type=entity.image_type,
                 mime_type=entity.mime_type,
                 content=image_content,
+                metadata=ChunkMetadata.model_validate(
+                    entity.metadata_,
+                ),
             )
         raise ValueError(f"unexpected argument: {entity!r}")
