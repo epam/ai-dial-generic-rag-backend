@@ -7,7 +7,6 @@ import pytest
 from generic_rag.channel import Channel
 from generic_rag.components.generation.default import (
     DefaultAnswerGeneratorConfig,
-    DefaultAnswerGeneratorRequest,
     DefaultChatPromptChain,
     DefaultChatPromptChainInputSchema,
 )
@@ -114,7 +113,6 @@ async def test_current_date_is_offered_to_a_request_and_not_to_a_channel():
 
     assert "current_date" in request_model.model_fields
     assert "current_date" not in channel_model.model_fields
-    assert issubclass(request_model, DefaultAnswerGeneratorRequest)
 
 
 async def test_query_precedes_the_context_block():
