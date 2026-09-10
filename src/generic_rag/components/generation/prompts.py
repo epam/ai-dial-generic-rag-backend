@@ -1,5 +1,6 @@
 class GenerationPromptBase:
     system_prompt_header: str = ""
+    completeness_instructions: str = ""
     formatting_instructions: str = """\
 ## Formatting instructions
 
@@ -9,7 +10,7 @@ Provide your response as a text in the following style:
 - Add citations according to the instructions below
 """
     citation_instructions: str = """\
-Cite pieces of context using <[number]> notation (like <[2]>). Only cite the most relevant pieces of context that answer the question accurately.
+Cite pieces of context using <[number]> notation (like <[2]>). Cite every piece of context whose information you used in the answer.
 Place these citations at the end of the sentence or paragraph that reference them - do not put them all at the end.
 If different citations refer to different entities within the same name, write separate answers for each entity.
 If you want to cite multiple pieces of context for the same sentence, format it as `<[number1]> <[number2]>`.
@@ -26,11 +27,13 @@ However, you should NEVER do this with the same number - if you want to cite `nu
             )
         else:
             prompt_header = cls.system_prompt_header
-        return "\n".join([  # noqa: FLY002
+        sections = [
             prompt_header,
+            cls.completeness_instructions,
             cls.formatting_instructions,
             cls.citation_instructions,
-        ])
+        ]
+        return "\n".join(section for section in sections if section)
 
 
 class DefaultGenerationPrompt(GenerationPromptBase):
@@ -46,6 +49,8 @@ retrieved using embedding search
 - If retrieved contexts do not contain the answer,
 you must EXPLICITLY notice user that you couldn't find the answer.
 This notice MUST always be in the BEGINNING of your answer.
+- Before concluding the answer is not present, carefully re-check ALL text chunks AND all page images:
+the answer is often present in a chunk or image you did not consider relevant at first glance.
 - You must ALWAYS only REFERENCE the contexts, NEVER add information not present in the contexts
 - It is ABSOLUTELY FORBIDDEN to invent or make up an answer!
 - It is forbidden to contemplate or have personal opinion
@@ -70,4 +75,19 @@ similar-looking page of another year.
 - When a page rates items with icons, symbols or a scale (for example filled dots or
 traffic-light panels), state the literal rating value shown for the item in question.
 - Citing an image-only context is allowed and works the same as citing a text context.
+"""
+    completeness_instructions: str = """\
+## Completeness requirements
+
+- Your answer must be COMPREHENSIVE: gather relevant information from EVERY piece of context
+that relates to the question, not only from the single best one.
+- Always include the specific figures stated in the relevant contexts: numbers, percentages, amounts,
+dates, time horizons and forecast values. Reproduce them exactly as written.
+- Preserve comparative and contextual framing present in the contexts
+(e.g. "higher than the past five years", "compared to 2024", drivers and reasons behind a trend).
+- Do NOT compress the answer into a short summary: cover each distinct relevant aspect
+(e.g. current level, expected change, drivers, risks, regional differences) in its own sentence
+or paragraph. A longer, complete answer is always preferred over a brief one.
+- Do not stop after answering the literal question: if the contexts qualify the answer
+(conditions, exceptions, outlook revisions), include those qualifications.
 """
