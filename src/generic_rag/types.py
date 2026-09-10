@@ -250,9 +250,9 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
     @classmethod
     def create[T: ConfigurableComponent](cls: type[T], config: ConfigT, **kwargs) -> T:
         """Create instance of this component for given configuration."""
-        candidates = [
+        candidates = list({
             impl for impl in cls.get_implementations() if isinstance(config, impl.get_config_model())
-        ]
+        })
         if len(candidates) == 1:
             return candidates[0](config, **kwargs)
         if len(candidates) > 1:
@@ -354,17 +354,64 @@ class ConfigurableComponent[ConfigT: BaseModel = BaseModel](Component, ABC):
         return None
 
 
-class DocumentParser[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
+class DocumentParserConfig[TransformT](BaseModel):
+    transform: list[TransformT] = Field(
+        default_factory=list,
+        description=(
+            "Defines transforms to apply to the extracted chunks.\n\n"
+            "Invoked sequentially one-by-one (an extracted chunk will be received by the first "
+            "transform specified here, its result is passed to the next one etc.)."
+        ),
+    )
+
+    @classmethod
+    async def get_dynamic_model(cls):
+        transform_config_model = await ChunkTransform.get_aggregated_config_model()
+
+        # noinspection bad-index
+        return create_model(
+            cls.__name__,
+            __base__=cls[transform_config_model],
+            __doc__=cls.__doc__,
+        )
+
+
+class DocumentParser[ConfigT: DocumentParserConfig = DocumentParserConfig](
+    ConfigurableComponent[ConfigT], ABC
+):
     """Component used to extract chunks from document."""
+
+    def __init__(self, config: ConfigT):
+        super().__init__(config)
+        self._transform = [ChunkTransform.create(config) for config in self.config.transform or []]
 
     @property
     @abstractmethod
     def supported_mime_types(self) -> frozenset[str]:
         """MIME types of documents that can be processed by this parser."""
 
-    @abstractmethod
-    async def extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]:
+    def extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]:
         """Extract chunks from given document"""
+        return self._apply_transform(
+            self._extract_chunks(document),
+        )
+
+    async def _apply_transform(self, chunks: AsyncIterable[AnyChunk]):
+        for transform in self._transform:
+            chunks = transform.apply(chunks)
+        async for chunk in chunks:
+            yield chunk
+
+    @abstractmethod
+    def _extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]: ...
+
+
+class ChunkTransform[ConfigT: BaseModel = BaseModel](ConfigurableComponent[ConfigT], ABC):
+    """Component which can apply arbitrary transformations to chunks."""
+
+    @abstractmethod
+    def apply(self, chunks: AsyncIterable[AnyChunk]) -> AsyncIterable[AnyChunk]:
+        """Get the chunks with transformations applied."""
 
 
 type TextType = str
@@ -401,11 +448,27 @@ class Indexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
     async def index_query(self, query: str) -> IndexT:
         """Index given query in a way that allows to perform lookup for matching records."""
 
+
+class ChunkIndexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
+    Indexer[IndexT, ConfigT], ABC
+):
+    """Component for indexing chunks."""
+
     @abstractmethod
-    async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
-    ) -> Collection[IndexRecord[IndexT]]:
-        """Index given data for further storage."""
+    async def index_chunks(
+        self, data: Iterable[tuple[AnyChunk, IndexRecordMeta]]
+    ) -> Collection[IndexRecord[IndexT]]: ...
+
+
+class StringIndexer[IndexT: TextType | VectorType, ConfigT: BaseModel = BaseModel](
+    Indexer[IndexT, ConfigT], ABC
+):
+    """Component for indexing text data."""
+
+    @abstractmethod
+    async def index_strings(
+        self, data: Iterable[tuple[str, IndexRecordMeta]]
+    ) -> Collection[IndexRecord[IndexT]]: ...
 
 
 class IndexStorage[IndexT: TextType | VectorType](ABC):

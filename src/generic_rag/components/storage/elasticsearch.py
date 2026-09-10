@@ -3,6 +3,7 @@ from collections.abc import AsyncIterable, Collection, Iterable
 
 from elasticsearch import AsyncElasticsearch, helpers
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from sqlalchemy.util import OrderedSet
 
 from generic_rag.types import (
     Indexer,
@@ -136,15 +137,28 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
                 }
             }
 
-        raw_result = await self._client.search(
-            index=self._index,
-            query=search_query,
-            size=limit,
-            source_includes=[f"metadata.{field}" for field in fields] if fields else None,
-        )
-        result = SearchResult.model_validate(raw_result.body)
+        result: OrderedSet[IndexRecordMeta] = OrderedSet()
 
-        return [IndexRecordMeta.model_validate(hit.source["metadata"]) for hit in result.hits.hits]
+        async for raw_hit in helpers.async_scan(
+            client=self._client,
+            index=self._index,
+            query={
+                "query": search_query,
+                "_source_includes": [f"metadata.{field}" for field in fields] if fields else None,
+            },
+            preserve_order=True,
+            size=limit,
+        ):
+            hit = SearchHit.model_validate(raw_hit)
+            meta = IndexRecordMeta.model_validate(
+                hit.source["metadata"],
+            )
+            if meta not in result:
+                result.add(meta)
+            if len(result) >= limit:
+                break
+
+        return result
 
     async def add(self, records: Iterable[IndexRecord[IndexT]]):
         """
@@ -188,7 +202,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
         if not await self._client.indices.exists(index=self._index):
             return
 
-        async for raw_result in helpers.async_scan(
+        async for raw_hit in helpers.async_scan(
             client=self._client,
             index=self._index,
             query={
@@ -197,7 +211,7 @@ class ElasticsearchIndexStorage[IndexT: TextType](IndexStorage[IndexT]):
                 }
             },
         ):
-            hit = SearchHit.model_validate(raw_result)
+            hit = SearchHit.model_validate(raw_hit)
             yield IndexRecord.model_validate({
                 "index": hit.source["content"],
                 "metadata": hit.source["metadata"],

@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Sequence
 
 
 async def batched_async[T](iterable: AsyncIterable[T], batch_size: int) -> AsyncIterable[Sequence[T]]:
@@ -18,3 +18,9 @@ async def batched_async[T](iterable: AsyncIterable[T], batch_size: int) -> Async
             batch = []
     if batch:
         yield batch
+
+
+async def iterate_async[T](items: Iterable[T]) -> AsyncGenerator[T]:
+    """Create async generator from given Iterable."""
+    for item in items:
+        yield item

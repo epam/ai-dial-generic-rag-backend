@@ -2,15 +2,15 @@ import logging
 from collections.abc import Collection
 
 from injection import inject
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from generic_rag.components.indexers.text_indexer import TextIndexer
+from generic_rag.components.indexers.text_indexer import TextIndexer, TextIndexerConfig
 from generic_rag.types import IndexRecord, IndexRecordMeta, ModelProvider, VectorType
 
 logger = logging.getLogger(__name__)
 
 
-class TextEmbeddingsConfig(BaseModel):
+class TextEmbeddingsConfig(TextIndexerConfig):
     deployment_name: str = Field(
         ...,
         description="Name of a text embeddings model to use.",
@@ -30,7 +30,7 @@ class TextEmbeddingsIndexer(TextIndexer[VectorType, TextEmbeddingsConfig]):
     """Represent source texts as vectors calculated with text embeddings model."""
 
     @inject
-    def __init__(self, config: TextEmbeddingsConfig, model_provider: ModelProvider):
+    def __init__(self, config: TextEmbeddingsConfig, model_provider: ModelProvider = NotImplemented):
         super().__init__(config)
 
         self._model = model_provider.get_embeddings_model(

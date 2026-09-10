@@ -203,7 +203,7 @@ class ClassicRetriever[ConfigT: ClassicRetrieverConfig = ClassicRetrieverConfig]
         self._chunk_service = chunk_service
 
     async def _index_search(
-        self, query: str, index: ChunkIndex, top_k: int, documents: list[int] | None = None
+        self, query: str, index: ChunkIndex, top_k: int, documents: Sequence[int] | None = None
     ) -> Sequence[RetrievedDocument]:
         return await ClassicIndexResultsPostprocessor(top_k).invoke(
             await super()._index_search(query, index, top_k, documents)

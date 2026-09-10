@@ -3,7 +3,7 @@ import operator
 from abc import ABC
 from collections.abc import Collection, Iterable
 from functools import reduce
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import jsonpath_ng
 from injection import afind_instance, inject
@@ -14,6 +14,7 @@ from generic_rag.types import (
     DEFAULT_BACKEND,
     DEFAULT_RESULTS_LIMIT,
     AnyChunk,
+    ChunkIndexer,
     ChunkRef,
     ConfigurableComponent,
     Document,
@@ -21,6 +22,7 @@ from generic_rag.types import (
     IndexRecordMeta,
     IndexStorage,
     IndexStorageBackend,
+    StringIndexer,
     TextType,
     VectorType,
 )
@@ -34,11 +36,12 @@ class StorageBackendDiscriminator(BaseModel):
     backend: str
 
 
-class IndexConfig(BaseModel, ABC):
-    """:class:`Index` configuration model."""
+class IndexConfig[IndexerT](BaseModel, ABC):
+    INDEXER_CLASS: ClassVar[type[Indexer]]
+    """Base class of Indexer included in this configuration (should be defined by children)."""
 
     display_name: str = Field(..., description="Human-friendly name of the index.")
-    indexer: BaseModel
+    indexer: IndexerT
     storage: StorageBackendDiscriminator
     default_limit: int = Field(
         DEFAULT_RESULTS_LIMIT,
@@ -51,7 +54,7 @@ class IndexConfig(BaseModel, ABC):
         cls: type[T],
         index_backends: dict[str, IndexStorageBackend] = NotImplemented,
     ) -> type[T]:
-        indexer_model = await Indexer.get_aggregated_config_model()
+        indexer_model = await cls.INDEXER_CLASS.get_aggregated_config_model()
 
         # noinspection PyTypeHints
         backend_variants = [
@@ -75,12 +78,11 @@ class IndexConfig(BaseModel, ABC):
             "backend": DEFAULT_BACKEND,
         })
 
-        # noinspection PyTypeChecker
+        # noinspection PyTypeChecker,unresolved-references
         return create_model(
             cls.__name__,
-            __base__=cls,
+            __base__=cls[indexer_model],
             __doc__=cls.__doc__,
-            indexer=indexer_model,
             storage=Annotated[
                 storage_model,
                 Field(
@@ -93,7 +95,7 @@ class IndexConfig(BaseModel, ABC):
 
 
 class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
-    ConfigurableComponent[ConfigT]
+    ConfigurableComponent[ConfigT], ABC
 ):
     """Component that allows to perform relevancy search of previously indexed data."""
 
@@ -142,7 +144,11 @@ class Index[IndexT: TextType | VectorType, ConfigT: IndexConfig = IndexConfig](
         return self._storage
 
 
-class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
+class ChunkIndexConfig(IndexConfig):
+    INDEXER_CLASS: ClassVar[type[Indexer]] = ChunkIndexer
+
+
+class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT, ChunkIndexConfig]):
     """Enables relevance search and retrieval of documents content pieces (chunks)."""
 
     @log_execution_time(logger)
@@ -174,6 +180,7 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
 
         :param chunks: chunks to update the index with
         """
+        assert isinstance(self._indexer, ChunkIndexer)
         if data := [
             (
                 chunk,
@@ -184,11 +191,13 @@ class ChunkIndex[IndexT: TextType | VectorType](Index[IndexT]):
             for chunk in chunks
         ]:
             await self._storage.add(
-                await self._indexer.index_data(data),
+                await self._indexer.index_chunks(data),
             )
 
 
 class DocumentIndexConfig(IndexConfig):
+    INDEXER_CLASS: ClassVar[type[Indexer]] = StringIndexer
+
     fields: list[
         Annotated[
             str, Field(pattern=r"^\$(?:\.[a-zA-Z_][a-zA-Z0-9_*]*|\?|\[(?:[0-9*]+|'[^']+'|\"[^\"]+\")\])*$")
@@ -241,6 +250,7 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
     @log_execution_time(logger)
     async def add(self, documents: Iterable[Document]):
         """Add given documents to the index."""
+        assert isinstance(self._indexer, StringIndexer)
         if data := [
             (
                 item,
@@ -249,13 +259,13 @@ class DocumentIndex[IndexT: TextType | VectorType](Index[IndexT, DocumentIndexCo
                 ),
             )
             for doc in documents
-            if (item := await self._extract_data(doc))
+            if (item := await self._extract_text(doc))
         ]:
             await self._storage.add(
-                await self._indexer.index_data(data),
+                await self._indexer.index_strings(data),
             )
 
-    async def _extract_data(self, doc: Document) -> str:
+    async def _extract_text(self, doc: Document) -> str:
         document_view = {"display_name": doc.display_name, "metadata": doc.metadata}
         if doc.mime_type.lower().startswith("text/"):
             document_view["content"] = (await doc.get_content()).decode()
