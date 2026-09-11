@@ -3,7 +3,7 @@ from typing import Annotated
 
 from injection import scoped
 from pydantic import BaseModel, Field
-from sqlalchemy import INTEGER, ColumnElement, Select, func, select
+from sqlalchemy import INTEGER, ColumnElement, Select, func, select, union_all
 
 from generic_rag.channel import Channel
 from generic_rag.db.entities import DocumentEntity, ImageChunkEntity, TextChunkEntity
@@ -79,27 +79,42 @@ class DocumentStatsService:
 
     @transaction
     async def get_document_stats(self, *document_ids: int) -> Sequence[DocumentStats]:
-        """Get statistics for given documents."""
+        """
+        Get statistics for given documents.
+
+        The highest page number is taken over the union of both chunk tables rather than over a
+        join of them. Joining both to `documents` pairs every text chunk with every image chunk of
+        the same document, so the rows scanned grow as their product: a document with 500 text and
+        50 image chunks materialises 25 000 rows to answer with one number.
+        """
         if not document_ids:
             return []
 
-        result = await get_current_session().execute(
+        ids = set(document_ids)
+        pages = union_all(*[
             select(
-                DocumentEntity.document_id,
-                func.max(
-                    func.greatest(
-                        func.cast(TextChunkEntity.metadata_["page_number"], INTEGER),
-                        func.cast(ImageChunkEntity.metadata_["page_number"], INTEGER),
-                    )
-                ).label("number_of_pages"),
+                entity.document_id.label("document_id"),
+                func.cast(entity.metadata_["page_number"], INTEGER).label("page_number"),
+            ).where(entity.channel_key == self._channel_key, entity.document_id.in_(ids))
+            for entity in (TextChunkEntity, ImageChunkEntity)
+        ]).subquery()
+
+        max_page = (
+            select(
+                pages.c.document_id,
+                func.max(pages.c.page_number).label("number_of_pages"),
             )
-            .outerjoin(TextChunkEntity)
-            .outerjoin(ImageChunkEntity)
+            .group_by(pages.c.document_id)
+            .subquery()
+        )
+
+        result = await get_current_session().execute(
+            select(DocumentEntity.document_id, max_page.c.number_of_pages)
+            .outerjoin(max_page, max_page.c.document_id == DocumentEntity.document_id)
             .where(
                 DocumentEntity.channel_key == self._channel_key,
-                DocumentEntity.document_id.in_(set(document_ids)),
+                DocumentEntity.document_id.in_(ids),
             )
-            .group_by(DocumentEntity.document_id)
         )
         return [
             DocumentStats(
