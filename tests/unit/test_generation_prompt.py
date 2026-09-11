@@ -10,7 +10,7 @@ from generic_rag.components.generation.default import (
     DefaultChatPromptChain,
     DefaultChatPromptChainInputSchema,
 )
-from generic_rag.types import AnyChunk, ImageChunk, ImageType, RetrievedDocument, TextChunk
+from generic_rag.types import AnyChunk, ChunkMetadata, ImageChunk, ImageType, RetrievedDocument, TextChunk
 
 SOURCE_URL = "files/BUCKET-ID/appdata/generic-rag-deployment/reports/Some%20Report%202024.pdf"
 DISPLAY_NAME = "Some Report 2024.pdf"
@@ -20,10 +20,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 def _text_chunk(text: str, *, chunk_id: int = 1, page_number: int = 1) -> TextChunk:
     return TextChunk(
-        document_id=1,
-        chunk_id=chunk_id,
-        page_number=page_number,
-        text=text,
+        document_id=1, chunk_id=chunk_id, text=text, metadata=ChunkMetadata(page_number=page_number)
     )
 
 
@@ -31,10 +28,10 @@ def _image_chunk(chunk_id: int = 2, page_number: int = 1) -> ImageChunk:
     return ImageChunk(
         document_id=1,
         chunk_id=chunk_id,
-        page_number=page_number,
         image_type=ImageType.page,
         mime_type="image/png",
         content=PNG,
+        metadata=ChunkMetadata(page_number=page_number),
     )
 
 
@@ -42,7 +39,7 @@ def _document(*chunks: AnyChunk, **source) -> RetrievedDocument:
     return RetrievedDocument(
         chunks=list(chunks),
         source_id=chunks[0].document_id,
-        source_page_number=chunks[0].page_number,
+        source_page_number=chunks[0].metadata.page_number,
         source_url=source.get("source_url", SOURCE_URL),
         source_display_name=source.get("source_display_name", DISPLAY_NAME),
         source_metadata=source.get("source_metadata", {}),

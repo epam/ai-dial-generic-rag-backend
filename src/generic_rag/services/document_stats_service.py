@@ -3,7 +3,7 @@ from typing import Annotated
 
 from injection import scoped
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import INTEGER, func, select
 
 from generic_rag.channel import Channel
 from generic_rag.db.entities import DocumentEntity, ImageChunkEntity, TextChunkEntity
@@ -36,8 +36,8 @@ class DocumentStatsService:
                 DocumentEntity.document_id,
                 func.max(
                     func.greatest(
-                        TextChunkEntity.page_number,
-                        ImageChunkEntity.page_number,
+                        func.cast(TextChunkEntity.metadata_["page_number"], INTEGER),
+                        func.cast(ImageChunkEntity.metadata_["page_number"], INTEGER),
                     )
                 ).label("number_of_pages"),
             )

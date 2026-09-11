@@ -1,7 +1,6 @@
 import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from annotated_types import Interval
 from sqlalchemy import (
     DateTime,
     Enum,
@@ -51,7 +50,7 @@ class TextChunkEntity(_EntityBase):
     chunk_id: Mapped[int]
 
     text: Mapped[str] = mapped_column(Text)
-    page_number: Mapped[Annotated[int, Interval(ge=0)]]
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB)
 
     __table_args__ = (
         PrimaryKeyConstraint("channel_key", "document_id", "chunk_id"),
@@ -73,7 +72,7 @@ class ImageChunkEntity(_EntityBase):
     image_type: Mapped[ImageType] = mapped_column(Enum(ImageType, native_enum=False, length=15))
     image_url: Mapped[str]
     mime_type: Mapped[str]
-    page_number: Mapped[Annotated[int, Interval(ge=0)]]
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB)
 
     __table_args__ = (
         PrimaryKeyConstraint("channel_key", "document_id", "chunk_id"),

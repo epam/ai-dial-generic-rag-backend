@@ -198,15 +198,13 @@ class GetPagesTool(NamedTuple):
 
         for chunk in chunks:
             if isinstance(chunk, TextChunk):
-                assert chunk.page_number is not None
-                if content_block := text_content.get(chunk.page_number):
+                if content_block := text_content.get(chunk.metadata.page_number):
                     content_block.text += "\n" + chunk.text
                 else:
-                    text_content[chunk.page_number] = TextContent(type="text", text=chunk.text)
+                    text_content[chunk.metadata.page_number] = TextContent(type="text", text=chunk.text)
 
             elif isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page:
-                assert chunk.page_number is not None
-                image_content[chunk.page_number] = ImageContent(
+                image_content[chunk.metadata.page_number] = ImageContent(
                     type="image", data=base64.b64encode(chunk.content).decode(), mimeType=chunk.mime_type
                 )
 
@@ -266,7 +264,7 @@ class RetrievedChunk(BaseModel):
                     document_id=chunk.document_id,
                     chunk_id=chunk.chunk_id,
                     text=chunk.text,
-                    page_number=chunk.page_number,
+                    page_number=chunk.metadata.page_number,
                     metadata=(
                         {k: v for k, v in doc.source_metadata.items() if k in metadata_field_names}
                         if metadata_field_names is not None

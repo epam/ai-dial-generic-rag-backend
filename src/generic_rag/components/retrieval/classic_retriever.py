@@ -53,7 +53,7 @@ class ClassicIndexResultsPostprocessor:
         for doc in retrieved_docs:
             assert len(doc.chunks) == 1
             original_chunk: AnyChunk = doc.chunks[0]
-            page_key = (original_chunk.document_id, original_chunk.page_number)
+            page_key = (original_chunk.document_id, original_chunk.metadata.page_number)
 
             if original_chunk.chunk_type == ChunkType.image and page_key in text_chunks_by_page:
                 # instead of returning original image chunk with page image we return
@@ -79,7 +79,7 @@ class ClassicIndexResultsPostprocessor:
         self, retrieved_docs: Sequence[RetrievedDocument]
     ) -> dict[tuple[int, int], list[TextChunk]]:
         doc_pages = [
-            (chunk.document_id, chunk.page_number)
+            (chunk.document_id, chunk.metadata.page_number)
             for doc in retrieved_docs
             for chunk in doc.chunks
             if isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page
@@ -90,7 +90,7 @@ class ClassicIndexResultsPostprocessor:
         for chunk in await self._chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.text):
             assert isinstance(chunk, TextChunk)
             result.setdefault(
-                (chunk.document_id, chunk.page_number),
+                (chunk.document_id, chunk.metadata.page_number),
                 [],
             ).append(chunk)
 
@@ -134,7 +134,7 @@ class ClassicAggregatedResultPostprocessor:
             assert isinstance(doc.model_extra, dict)
 
             original_chunk: AnyChunk = doc.chunks[0]
-            image_key = (original_chunk.document_id, original_chunk.page_number)
+            image_key = (original_chunk.document_id, original_chunk.metadata.page_number)
 
             if image_key not in attached_images and (page_image := image_by_page.get(image_key)):
                 yield doc.model_copy(update={"chunks": [original_chunk, page_image]})
@@ -158,7 +158,7 @@ class ClassicAggregatedResultPostprocessor:
         ):
             assert isinstance(chunk, ImageChunk)
             if chunk.image_type == ImageType.page:
-                result[(chunk.document_id, chunk.page_number)] = chunk
+                result[(chunk.document_id, chunk.metadata.page_number)] = chunk
 
         return result
 
@@ -167,11 +167,11 @@ class ClassicAggregatedResultPostprocessor:
         for doc in retrieved_docs:
             chunk: AnyChunk = doc.chunks[0]
             if doc.model_extra.get("retrieval_type") == RetrievalType.image:
-                yield chunk.document_id, chunk.page_number
+                yield chunk.document_id, chunk.metadata.page_number
         for doc in retrieved_docs:
             chunk: AnyChunk = doc.chunks[0]
             if doc.model_extra.get("retrieval_type") == RetrievalType.text:
-                yield chunk.document_id, chunk.page_number
+                yield chunk.document_id, chunk.metadata.page_number
 
 
 class ClassicRetrieverConfig(AbstractRetrieverConfig):

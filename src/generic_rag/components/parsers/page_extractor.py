@@ -9,7 +9,7 @@ from pdfplumber.page import Page
 from PIL.Image import Image
 from pydantic import BaseModel, Field
 
-from generic_rag.types import Document, DocumentParser, ImageChunk, ImageType
+from generic_rag.types import ChunkMetadata, Document, DocumentParser, ImageChunk, ImageType
 from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
@@ -49,10 +49,10 @@ class PageExtractor(DocumentParser[PageExtractorConfig]):
                 yield ImageChunk(
                     document_id=document.id,
                     chunk_id=page_number,
-                    page_number=page_number,
                     image_type=ImageType.page,
                     mime_type="image/png",
                     content=image_content,
+                    metadata=ChunkMetadata(page_number=page_number),
                 )
 
     @staticmethod

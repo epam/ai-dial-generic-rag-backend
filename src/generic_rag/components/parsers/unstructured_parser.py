@@ -8,7 +8,7 @@ from functools import cached_property
 from pydantic import BaseModel, Field, model_validator
 from unstructured.partition.auto import partition
 
-from generic_rag.types import Document, DocumentParser, TextChunk
+from generic_rag.types import ChunkMetadata, Document, DocumentParser, TextChunk
 from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,8 @@ class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
             yield TextChunk(
                 document_id=document.id,
                 chunk_id=i,
-                page_number=element.metadata.page_number or 0,
                 text=element.text,
+                metadata=ChunkMetadata(
+                    page_number=element.metadata.page_number or 0,
+                ),
             )
