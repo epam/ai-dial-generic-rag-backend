@@ -359,6 +359,41 @@ async def rag_search(
     return TextContent(type="text", text=text)
 
 
+DOCUMENT_IDS_PATTERN = r"^[1-9][0-9]*(,[1-9][0-9]*)*$"
+
+_DOCUMENT_IDS_DESCRIPTION = """\
+IDs of the required documents, joined with commas and nothing else, for example `1,5,9`.
+A single id is allowed. A trailing comma, a space after a comma, a non-numeric id or an id of zero
+makes the whole read fail, rather than that one id being dropped from the answer silently.
+"""
+
+
+@provider.resource("documents://metadata/{document_ids}", mime_type="application/json")
+async def documents_metadata(
+    document_ids: Annotated[str, Field(description=_DOCUMENT_IDS_DESCRIPTION, pattern=DOCUMENT_IDS_PATTERN)],
+) -> dict[int, dict[str, Any]]:
+    """
+    Metadata of the requested documents, as a JSON object keyed by document id.
+
+    Each value is that document's metadata exactly as stored: every key the channel holds,
+    none of them renamed, and nothing added. The channel's own metadata schema is therefore
+    what tells a consumer which key carries the title, the publication date, and so on.
+
+    An id this channel does not know is absent from the answer rather than an error, so a
+    caller must not assume every id it asked for comes back.
+
+    This is a resource rather than a tool because application code, not a model, chooses the
+    ids and reads it: the answer is the same for every caller within a channel, and the read
+    has no side effect.
+    """
+    document_service = await afind_instance(DocumentService)
+
+    documents = await document_service.get_documents_by_id(
+        int(document_id) for document_id in document_ids.split(",")
+    )
+    return {document.id: document.metadata for document in documents}
+
+
 class DynamicSchemasTransform(Transform):
     """Transform that adds correct dynamic schemas."""
 
