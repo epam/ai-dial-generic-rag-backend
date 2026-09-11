@@ -52,6 +52,7 @@ from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_matcher import DocumentMatcherConfig
 from generic_rag.services.document_service import DocumentService, SortBy, SortDirection
+from generic_rag.services.document_stats_service import ChannelChunkStats, DocumentStatsService
 from generic_rag.services.export_service import ExportService
 from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
 from generic_rag.services.metadata_service import MetadataService
@@ -461,6 +462,31 @@ class MetadataSchemaResponse(BaseModel):
         dict[str, list[str]],
         Field(..., description="list of dimensions and their values that can be used to filter documents"),
     ]
+
+
+@_channel.get("/stats", tags=["stats"])
+async def get_channel_stats(
+    stats_service: Inject[DocumentStatsService],
+) -> ChannelChunkStats:
+    """
+    Get chunk statistics for every document in the channel.
+
+    Reports how many text and image chunks each document produced and how many characters its text
+    chunks hold, so a document that was parsed without any text being extracted can be spotted:
+    such a document reaches status `ready` but has `text_chunks` of 0.
+    """
+    return await stats_service.get_channel_chunk_stats()
+
+
+@_channel.get("/documents/{id}/stats", tags=["stats"])
+async def get_document_stats(
+    document_id: Annotated[int, Path(alias="id", description="id of the document")],
+    document_service: Inject[DocumentService],
+    stats_service: Inject[DocumentStatsService],
+) -> ChannelChunkStats:
+    """Get chunk statistics for one document, broken down by page."""
+    await document_service.get_document(document_id)  # raises if the document does not exist
+    return await stats_service.get_channel_chunk_stats([document_id], include_pages=True)
 
 
 @_channel.get("/metadata", tags=["metadata"])

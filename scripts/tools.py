@@ -326,6 +326,93 @@ async def _clear_channel(application_id: str):
                 logger.warning(str(e))
 
 
+async def _channel_stats(application_id: str, document_id: int | None, as_json: bool):
+    if not as_json:
+        # keep stdout free of anything but the JSON document, so the output can be piped
+        logger.info(f"{DIAL_URL=}")
+        logger.info(f"{application_id=}")
+
+    application_route = f"/v1/deployments/{application_id}/route"
+    path = (
+        f"{application_route}/channel/documents/{document_id}/stats"
+        if document_id is not None
+        else f"{application_route}/channel/stats"
+    )
+
+    async with ClientSession(base_url=DIAL_URL, headers={"api-key": DIAL_API_KEY}) as session:
+        await _validate_application(session, application_id)
+
+        async with session.get(path) as response:
+            if response.status == 404 and document_id is not None:  # noqa: PLR2004
+                raise OperationError(f"document not found, {document_id=}")
+            response.raise_for_status()
+            stats = await response.json()
+
+    if as_json:
+        click.echo(json.dumps(stats, indent=2))
+    elif document_id is not None:
+        _print_document_stats(stats["results"][0])
+    else:
+        _print_channel_stats(stats)
+
+
+def _print_channel_stats(stats: dict[str, Any]):
+    """Print one row per document, then the channel totals."""
+    rows = stats["results"]
+    name_width = max((len(row["display_name"]) for row in rows), default=0)
+    name_width = min(max(name_width, 9), 70)
+
+    click.echo(
+        f"{'id':>6}  {'display name':<{name_width}}  {'status':<10}  "
+        f"{'pages':>6}  {'text':>6}  {'images':>6}  {'chars':>10}"
+    )
+    for row in rows:
+        name = row["display_name"]
+        if len(name) > name_width:
+            name = "..." + name[-(name_width - 3) :]
+        line = (
+            f"{row['document_id']:>6}  {name:<{name_width}}  {row['status']:<10}  "
+            f"{row['number_of_pages']:>6}  {row['text_chunks']:>6}  "
+            f"{row['image_chunks']:>6}  {row['text_characters']:>10,}"
+        )
+        click.echo(click.style(line, fg="red") if row["text_chunks"] == 0 else line)
+
+    click.echo()
+    click.echo(
+        f"{stats['documents']} documents, {stats['text_chunks']:,} text chunks, "
+        f"{stats['image_chunks']:,} image chunks, {stats['text_characters']:,} characters"
+    )
+
+    without_text = stats["documents_without_text"]
+    if without_text:
+        click.echo(
+            click.style(
+                f"{without_text} document(s) have no text chunk at all - shown in red above. "
+                "A document that is 'ready' and still has no text was parsed without any text "
+                "being extracted.",
+                fg="red",
+            )
+        )
+
+
+def _print_document_stats(document: dict[str, Any]):
+    """Print the per-page breakdown of a single document."""
+    click.echo(f"document {document['document_id']}: {document['display_name']}")
+    click.echo(f"status: {document['status']}")
+    click.echo()
+    click.echo(f"{'page':>6}  {'text':>6}  {'images':>6}  {'chars':>10}")
+    for page in document["pages"] or []:
+        click.echo(
+            f"{page['page_number']:>6}  {page['text_chunks']:>6}  "
+            f"{page['image_chunks']:>6}  {page['text_characters']:>10,}"
+        )
+    click.echo()
+    click.echo(
+        f"{document['number_of_pages']} pages, {document['text_chunks']:,} text chunks, "
+        f"{document['image_chunks']:,} image chunks, {document['text_characters']:,} characters"
+    )
+
+
 @click.group()
 def cli():
     """RAG cli tools."""
@@ -388,6 +475,26 @@ def clear_channel(application: str):
     """Remove all channel's content."""
     asyncio.run(_clear_channel(application))
     logger.info("completed")
+
+
+@cli.command(name="stats", help=f"Report chunk statistics of a RAG channel.\n\n{APPLICATION_HELP}")
+@click.argument("application", required=True)
+@click.option(
+    "-d",
+    "--document",
+    "document_id",
+    type=int,
+    help="report a single document, broken down by page (default: every document in the channel)",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="print the raw JSON response instead of a table, for piping into jq or a script",
+)
+def channel_stats(application: str, document_id: int | None, as_json: bool):
+    """Report how many chunks and characters the channel's documents produced."""
+    asyncio.run(_channel_stats(application, document_id, as_json))
 
 
 def main():
