@@ -1,12 +1,10 @@
 import base64
-import enum
 import itertools
 import os
 from asyncio import TaskGroup
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
-from enum import StrEnum
-from typing import Annotated, Any, Literal, NamedTuple, Self
+from typing import Annotated, Any, Literal, Self
 
 import annotated_types
 from annotated_types import Gt
@@ -17,7 +15,7 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.server.transforms import Transform
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
-from injection import asfunction, inject
+from injection import afind_instance, inject
 from mcp import types as mt
 from mcp.types import ImageContent, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, create_model
@@ -52,15 +50,6 @@ GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
 )
 
 provider = LocalProvider()
-
-
-@enum.unique
-class ToolName(StrEnum):
-    LIST_DOCUMENTS = "list_documents_unordered"
-    GET_PAGES = "get_pages"
-    GET_CITATION_URL = "get_citation_url"
-    RETRIEVE_TEXT_CHUNKS = "retrieve_text_chunks"
-    RAG_SEARCH = "rag_search"
 
 
 class DocumentMetadata(BaseModel):
@@ -103,150 +92,136 @@ class DocumentMetadata(BaseModel):
         )
 
 
-@provider.tool(
-    name=ToolName.LIST_DOCUMENTS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-)
-@asfunction()
-class ListDocumentsTool(NamedTuple):
-    channel: Channel
-    document_service: DocumentService
-    stats_service: DocumentStatsService
+@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def list_documents_unordered(
+    metadata_filter: Annotated[
+        dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
+        Field(description="Filter by metadata fields"),
+    ] = None,
+    offset: Annotated[int, Field(ge=0, description="Offset, for pagination")] = 0,
+    limit: Annotated[
+        int, Field(ge=0, description="Maximum number of results to return, for pagination")
+    ] = 25,
+) -> dict[str, Any]:
+    """
+    List indexed documents along with their metadata.
+    Allows to filter by metadata fields and paginate the results.
+    Results are unsorted and unordered. Pagination does not imply ranking or recency.
+    Do not use the first page of results to infer “latest”, “top”, “first”, or “last” documents.
+    """
+    document_service = await afind_instance(DocumentService)
+    stats_service = await afind_instance(DocumentStatsService)
 
-    async def __call__(
-        self,
-        metadata_filter: Annotated[
-            dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields"),
-        ] = None,
-        offset: Annotated[int, Field(ge=0, description="Offset, for pagination")] = 0,
-        limit: Annotated[
-            int, Field(ge=0, description="Maximum number of results to return, for pagination")
-        ] = 25,
-    ) -> dict[str, Any]:
-        """
-        List indexed documents along with their metadata.
-        Allows to filter by metadata fields and paginate the results.
-        Results are unsorted and unordered. Pagination does not imply ranking or recency.
-        Do not use the first page of results to infer “latest”, “top”, “first”, or “last” documents.
-        """
-        matcher_config = (
-            (await DocumentMatcherConfig.get_dynamic_model()).model_validate(
-                {"filters": [metadata_filter]},
-            )
-            if metadata_filter
-            else None
+    matcher_config = (
+        (await DocumentMatcherConfig.get_dynamic_model()).model_validate(
+            {"filters": [metadata_filter]},
         )
+        if metadata_filter
+        else None
+    )
 
-        pagination = Pagination(offset, limit)
-        documents_list = await self.document_service.list_documents(pagination, matcher_config)
-        documents_stats: dict[int, DocumentStats] = {
-            doc_stats.document_id: doc_stats
-            for doc_stats in await self.stats_service.get_document_stats(*[
-                doc.id for doc in documents_list.results
-            ])
-        }
+    pagination = Pagination(offset, limit)
+    documents_list = await document_service.list_documents(pagination, matcher_config)
+    documents_stats: dict[int, DocumentStats] = {
+        doc_stats.document_id: doc_stats
+        for doc_stats in await stats_service.get_document_stats(*[doc.id for doc in documents_list.results])
+    }
 
-        document_metadata_model = await DocumentMetadata.get_dynamic_model()
+    document_metadata_model = await DocumentMetadata.get_dynamic_model()
 
-        result = PaginatedResults.create(
-            results=[
-                document_metadata_model.create(document, documents_stats.get(document.id))
-                for document in documents_list.results
-            ],
-            pagination=pagination,
-            total_count=documents_list.total_count,
-        )
-        return result.model_dump(exclude_unset=True)
-
-
-@provider.tool(name=ToolName.GET_PAGES, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
-@asfunction()
-class GetPagesTool(NamedTuple):
-    chunk_service: ChunkService
-
-    async def __call__(
-        self,
-        document_id: Annotated[int, Field(description="ID of the document", ge=1)],
-        page_start: Annotated[int, Field(description="Start page of the document (1 based)", ge=1)],
-        page_end: Annotated[int, Field(description="End page of the document (1 based)", ge=1)],
-        retrieve_type: Annotated[
-            Literal["text", "image", "both"], Field(alias="type", description="Content type to retrieve")
-        ] = "both",
-    ) -> list[TextContent | ImageContent]:
-        """Returns the full content of specific document's page range (text, image, or both)."""
-        if page_start > page_end:
-            raise ValueError("'page_start' cannot be greater than 'page_end'")
-        requested_pages = page_end - page_start + 1
-        if requested_pages > GET_PAGES_LIMIT:
-            raise ValueError(
-                f"you can request maximum {GET_PAGES_LIMIT} pages in single tool call "
-                f"({requested_pages} pages requested)"
-            )
-
-        doc_pages = [(document_id, page_idx) for page_idx in range(page_start, page_end + 1)]
-
-        match retrieve_type:
-            case "text":
-                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.text)
-            case "image":
-                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.image)
-            case "both":
-                chunks = await self.chunk_service.get_chunks_by_pages(*doc_pages)
-
-        text_content: dict[int, TextContent] = {}
-        image_content: dict[int, ImageContent] = {}
-
-        for chunk in chunks:
-            if isinstance(chunk, TextChunk):
-                if content_block := text_content.get(chunk.metadata.page_number):
-                    content_block.text += "\n" + chunk.text
-                else:
-                    text_content[chunk.metadata.page_number] = TextContent(type="text", text=chunk.text)
-
-            elif isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page:
-                image_content[chunk.metadata.page_number] = ImageContent(
-                    type="image", data=base64.b64encode(chunk.content).decode(), mimeType=chunk.mime_type
-                )
-
-        return list(self._get_result(document_id, text_content, image_content))
-
-    @staticmethod
-    def _get_result(
-        document_id: int, page_text: dict[int, TextContent], page_images: dict[int, ImageContent]
-    ):
-        for page_idx in sorted(set(page_text.keys()) | set(page_images.keys())):
-            yield TextContent(type="text", text=f"[Document {document_id}, Page {page_idx}]")
-            if content_block := page_text.get(page_idx):
-                yield content_block
-            if content_block := page_images.get(page_idx):
-                yield content_block
-
-
-@provider.tool(name=ToolName.GET_CITATION_URL, annotations=ToolAnnotations(destructiveHint=False))
-@asfunction()
-class GetCitationUrl(NamedTuple):
-    document_service: DocumentService
-    file_storage: FileStorage
-
-    async def __call__(
-        self,
-        document_ids: Annotated[
-            list[Annotated[int, annotated_types.Ge(1)]], Field(description="IDs of required documents")
+    result = PaginatedResults.create(
+        results=[
+            document_metadata_model.create(document, documents_stats.get(document.id))
+            for document in documents_list.results
         ],
-    ) -> dict[int, str]:
-        """Share given documents with a user. Returns a mapping of `{id: url}`."""
-        documents = await self.document_service.get_documents_by_id(document_ids)
-        async with TaskGroup() as task_group:
-            tasks = {
-                doc.id: task_group.create_task(
-                    self.file_storage.copy_file_to_user(
-                        doc.url,
-                        doc.display_name,
-                    )
+        pagination=pagination,
+        total_count=documents_list.total_count,
+    )
+    return result.model_dump(exclude_unset=True)
+
+
+@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_pages(
+    document_id: Annotated[int, Field(description="ID of the document", ge=1)],
+    page_start: Annotated[int, Field(description="Start page of the document (1 based)", ge=1)],
+    page_end: Annotated[int, Field(description="End page of the document (1 based)", ge=1)],
+    retrieve_type: Annotated[
+        Literal["text", "image", "both"], Field(alias="type", description="Content type to retrieve")
+    ] = "both",
+) -> list[TextContent | ImageContent]:
+    """Returns the full content of specific document's page range (text, image, or both)."""
+    chunk_service = await afind_instance(ChunkService)
+
+    if page_start > page_end:
+        raise ValueError("'page_start' cannot be greater than 'page_end'")
+    requested_pages = page_end - page_start + 1
+    if requested_pages > GET_PAGES_LIMIT:
+        raise ValueError(
+            f"you can request maximum {GET_PAGES_LIMIT} pages in single tool call "
+            f"({requested_pages} pages requested)"
+        )
+
+    doc_pages = [(document_id, page_idx) for page_idx in range(page_start, page_end + 1)]
+
+    match retrieve_type:
+        case "text":
+            chunks = await chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.text)
+        case "image":
+            chunks = await chunk_service.get_chunks_by_pages(*doc_pages, chunk_type=ChunkType.image)
+        case "both":
+            chunks = await chunk_service.get_chunks_by_pages(*doc_pages)
+
+    text_content: dict[int, TextContent] = {}
+    image_content: dict[int, ImageContent] = {}
+
+    for chunk in chunks:
+        if isinstance(chunk, TextChunk):
+            if content_block := text_content.get(chunk.metadata.page_number):
+                content_block.text += "\n" + chunk.text
+            else:
+                text_content[chunk.metadata.page_number] = TextContent(type="text", text=chunk.text)
+
+        elif isinstance(chunk, ImageChunk) and chunk.image_type == ImageType.page:
+            image_content[chunk.metadata.page_number] = ImageContent(
+                type="image", data=base64.b64encode(chunk.content).decode(), mimeType=chunk.mime_type
+            )
+
+    return list(_get_pages_content(document_id, text_content, image_content))
+
+
+def _get_pages_content(
+    document_id: int, page_text: dict[int, TextContent], page_images: dict[int, ImageContent]
+):
+    for page_idx in sorted(set(page_text.keys()) | set(page_images.keys())):
+        yield TextContent(type="text", text=f"[Document {document_id}, Page {page_idx}]")
+        if content_block := page_text.get(page_idx):
+            yield content_block
+        if content_block := page_images.get(page_idx):
+            yield content_block
+
+
+@provider.tool(annotations=ToolAnnotations(destructiveHint=False))
+async def get_citation_url(
+    document_ids: Annotated[
+        list[Annotated[int, annotated_types.Ge(1)]], Field(description="IDs of required documents")
+    ],
+) -> dict[int, str]:
+    """Share given documents with a user. Returns a mapping of `{id: url}`."""
+    document_service = await afind_instance(DocumentService)
+    file_storage = await afind_instance(FileStorage)
+
+    documents = await document_service.get_documents_by_id(document_ids)
+    async with TaskGroup() as task_group:
+        tasks = {
+            doc.id: task_group.create_task(
+                file_storage.copy_file_to_user(
+                    doc.url,
+                    doc.display_name,
                 )
-                for doc in documents
-            }
-        return {k: v.result() for k, v in tasks.items()}
+            )
+            for doc in documents
+        }
+    return {k: v.result() for k, v in tasks.items()}
 
 
 class RetrievedChunk(BaseModel):
@@ -294,47 +269,42 @@ def _get_retriever_overrides(document_ids: list[int] | None, metadata_filter: di
     return {}
 
 
-@provider.tool(
-    name=ToolName.RETRIEVE_TEXT_CHUNKS, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-)
-@asfunction()
-class DataRetrievalTool(NamedTuple):
-    channel: Channel
-    metadata_service: MetadataService
+@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def retrieve_text_chunks(
+    query: Annotated[str, Field(description="The search query")],
+    document_ids: Annotated[
+        list[int] | None, Field(description="Restrict search to specific documents")
+    ] = None,
+    metadata_filter: Annotated[
+        dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
+        Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
+    ] = None,
+) -> list[RetrievedChunk]:
+    """
+    Run retrieval part of RAG search pipeline.
+    Returns raw chunks relevant to a given query.
+    Allows to restrict retrieval to specific documents or to filter by metadata fields.
+    """
+    channel = await afind_instance(Channel)
+    metadata_service = await afind_instance(MetadataService)
 
-    async def __call__(
-        self,
-        query: Annotated[str, Field(description="The search query")],
-        document_ids: Annotated[
-            list[int] | None, Field(description="Restrict search to specific documents")
-        ] = None,
-        metadata_filter: Annotated[
-            dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
-        ] = None,
-    ) -> list[RetrievedChunk]:
-        """
-        Run retrieval part of RAG search pipeline.
-        Returns raw chunks relevant to a given query.
-        Allows to restrict retrieval to specific documents or to filter by metadata fields.
-        """
-        request_config_model = await RequestConfig.get_dynamic_model()
-        request_config = request_config_model.create(
-            defaults=self.channel.request_config,
-            overrides={
-                "retriever": _get_retriever_overrides(document_ids, metadata_filter),
-            },
-        )
+    request_config_model = await RequestConfig.get_dynamic_model()
+    request_config = request_config_model.create(
+        defaults=channel.request_config,
+        overrides={
+            "retriever": _get_retriever_overrides(document_ids, metadata_filter),
+        },
+    )
 
-        retriever = Retriever.create(request_config.retriever)
-        metadata_field_names = self.metadata_service.get_mcp_retrieve_chunks_field_names()
+    retriever = Retriever.create(request_config.retriever)
+    metadata_field_names = metadata_service.get_mcp_retrieve_chunks_field_names()
 
-        return list(
-            itertools.chain(*[
-                RetrievedChunk.create(doc, metadata_field_names)
-                for doc in await retriever.invoke(query, PlainAnswer())
-            ])
-        )
+    return list(
+        itertools.chain(*[
+            RetrievedChunk.create(doc, metadata_field_names)
+            for doc in await retriever.invoke(query, PlainAnswer())
+        ])
+    )
 
 
 _SEARCH_QUERY_DESCRIPTION = """\
@@ -347,51 +317,46 @@ Do not include filtering or scoping instructions in the query; use other argumen
 """
 
 
-@provider.tool(
-    name=ToolName.RAG_SEARCH, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-)
-@asfunction()
-class SearchTool(NamedTuple):
-    channel: Channel
+@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def rag_search(
+    query: Annotated[str, Field(description=_SEARCH_QUERY_DESCRIPTION)],
+    document_ids: Annotated[
+        list[int] | None, Field(description="Restrict search to specific documents")
+    ] = None,
+    metadata_filter: Annotated[
+        dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
+        Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
+    ] = None,
+) -> TextContent:
+    """
+    Run RAG search pipeline (retrieval + generation) across indexed documents.
+    Returns LLM-generated summary (not raw retrieval artifacts).
+    Allows to restrict search to specific documents or to filter by metadata fields.
+    Response contains document citations in `(document, page)` format.
+    """
+    channel = await afind_instance(Channel)
 
-    async def __call__(
-        self,
-        query: Annotated[str, Field(description=_SEARCH_QUERY_DESCRIPTION)],
-        document_ids: Annotated[
-            list[int] | None, Field(description="Restrict search to specific documents")
-        ] = None,
-        metadata_filter: Annotated[
-            dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
-            Field(description="Filter by metadata fields. Ignored if document_ids is provided"),
-        ] = None,
-    ) -> TextContent:
-        """
-        Run RAG search pipeline (retrieval + generation) across indexed documents.
-        Returns LLM-generated summary (not raw retrieval artifacts).
-        Allows to restrict search to specific documents or to filter by metadata fields.
-        Response contains document citations in `(document, page)` format.
-        """
-        request_config_model = await RequestConfig.get_dynamic_model()
-        request_config = request_config_model.create(
-            defaults=self.channel.request_config,
-            overrides={
-                "retriever": _get_retriever_overrides(document_ids, metadata_filter),
-                "generation": {
-                    "type": "default",
-                },
+    request_config_model = await RequestConfig.get_dynamic_model()
+    request_config = request_config_model.create(
+        defaults=channel.request_config,
+        overrides={
+            "retriever": _get_retriever_overrides(document_ids, metadata_filter),
+            "generation": {
+                "type": "default",
             },
-        )
+        },
+    )
 
-        retriever = Retriever.create(request_config.retriever)
-        answer_generator = AnswerGenerator.create(request_config.generation)
-        answer = PlainAnswer()
+    retriever = Retriever.create(request_config.retriever)
+    answer_generator = AnswerGenerator.create(request_config.generation)
+    answer = PlainAnswer()
 
-        await answer_generator.invoke(query, retriever, answer)
+    await answer_generator.invoke(query, retriever, answer)
 
-        text = answer.content
-        if not answer.has_references:
-            text += "\n\nNo references found"
-        return TextContent(type="text", text=text)
+    text = answer.content
+    if not answer.has_references:
+        text += "\n\nNo references found"
+    return TextContent(type="text", text=text)
 
 
 class DynamicSchemasTransform(Transform):
@@ -408,9 +373,9 @@ class DynamicSchemasTransform(Transform):
             transformed = current_tool
 
             if current_tool.name in {
-                ToolName.LIST_DOCUMENTS,
-                ToolName.RETRIEVE_TEXT_CHUNKS,
-                ToolName.RAG_SEARCH,
+                list_documents_unordered.__name__,
+                retrieve_text_chunks.__name__,
+                rag_search.__name__,
             }:
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
@@ -424,7 +389,7 @@ class DynamicSchemasTransform(Transform):
                     },
                 )
 
-            if current_tool.name == ToolName.LIST_DOCUMENTS:
+            if current_tool.name == list_documents_unordered.__name__:
                 # noinspection PyTypeHints
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
