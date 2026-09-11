@@ -7,15 +7,23 @@ from functools import cached_property
 import pdfplumber
 from pdfplumber.page import Page
 from PIL.Image import Image
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from generic_rag.types import ChunkMetadata, Document, DocumentParser, ImageChunk, ImageType
+from generic_rag.types import (
+    AnyChunk,
+    ChunkMetadata,
+    Document,
+    DocumentParser,
+    DocumentParserConfig,
+    ImageChunk,
+    ImageType,
+)
 from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
 
 
-class PageExtractorConfig(BaseModel):
+class PageExtractorConfig(DocumentParserConfig):
     image_size: int = Field(
         default=1536,
         description="maximum size of extracted image",
@@ -23,13 +31,13 @@ class PageExtractorConfig(BaseModel):
 
 
 class PageExtractor(DocumentParser[PageExtractorConfig]):
-    """Parser that extracts images of document pages."""
+    """Extracts pages of PDF documents as image chunks."""
 
     @cached_property
     def supported_mime_types(self) -> frozenset[str]:
         return frozenset({"application/pdf"})
 
-    async def extract_chunks(self, document: Document) -> AsyncIterable[ImageChunk]:
+    def _extract_chunks(self, document: Document) -> AsyncIterable[AnyChunk]:
         return self._extract_chunks_gen(document)
 
     @log_execution_time(logger)

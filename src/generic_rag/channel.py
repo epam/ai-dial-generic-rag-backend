@@ -9,12 +9,10 @@ from functools import cached_property
 from typing import Annotated, Any, Literal, Self, overload
 
 import jsonschema.validators
-from annotated_types import MinLen
 from fastapi.encoders import jsonable_encoder
 from injection import afind_instance
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
     TypeAdapter,
@@ -49,7 +47,7 @@ METADATA_SCHEMA_EXAMPLE = {
 }
 
 
-class ProcessingConfig(BaseModel, ABC):
+class ProcessingConfig[ParserT: BaseModel, IndexT: IndexConfig](BaseModel, ABC):
     """Options related to processing pipeline of data stored in the channel."""
 
     metadata_schema: dict[str, Any] = Field(
@@ -57,8 +55,29 @@ class ProcessingConfig(BaseModel, ABC):
         description="JSON schema of metadata that can be associated with documents of this channel",
         examples=[METADATA_SCHEMA_EXAMPLE],
     )
-    parsers: list[BaseModel]
-    indexes: dict[str, IndexConfig]
+    parsers: list[ParserT] = Field(
+        default_factory=list,
+        description="List of parsers to use to extract chunks from documents.",
+    )
+    indexes: dict[
+        Annotated[
+            str,
+            Field(
+                description="Internal name of the index.",
+                examples=["keyword", "semantic-index"],
+            ),
+        ],
+        IndexT,
+    ] = Field(description="Configuration of indexes.", min_length=1)
+
+    @field_validator("indexes", mode="before")
+    @classmethod
+    def _set_default_index_type(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for value in data.values():
+                if isinstance(value, dict) and "type" not in value:
+                    value["type"] = ChunkIndex.get_qualifier()
+        return data
 
     @field_validator("metadata_schema", mode="after")
     @classmethod
@@ -97,42 +116,14 @@ class ProcessingConfig(BaseModel, ABC):
         document_parser_config_model = await DocumentParser.get_aggregated_config_model()
         index_config_model = await Index.get_aggregated_config_model()
 
-        def _set_default_index_type(data: Any):
-            if isinstance(data, dict):
-                for value in data.values():
-                    if isinstance(value, dict) and "type" not in value:
-                        value["type"] = ChunkIndex.get_qualifier()
-            return data
-
-        # noinspection PyTypeHints,PyTypeChecker
+        # noinspection bad-return,unresolved-references
         return create_model(
             cls.__name__,
-            __base__=cls,
+            __base__=cls[
+                document_parser_config_model,
+                index_config_model,
+            ],
             __doc__=cls.__doc__,
-            parsers=Annotated[
-                list[document_parser_config_model],
-                Field(
-                    default_factory=list,
-                    description=(
-                        "List of parsers to use for extracting chunks from documents uploaded to the channel."
-                    ),
-                ),
-            ],
-            indexes=Annotated[
-                dict[
-                    Annotated[
-                        str,
-                        Field(
-                            description="Internal name of the index.",
-                            examples=["keyword", "semantic-index"],
-                        ),
-                    ],
-                    index_config_model,
-                ],
-                MinLen(1),
-                Field(description="Configuration of indexes for relevance search."),
-                BeforeValidator(_set_default_index_type),
-            ],
         )
 
 

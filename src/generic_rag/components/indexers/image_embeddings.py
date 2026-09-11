@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from generic_rag.types import (
     AnyChunk,
+    ChunkIndexer,
     ImageChunk,
-    Indexer,
     IndexRecord,
     IndexRecordMeta,
     ModelProvider,
@@ -37,7 +37,7 @@ class ImageEmbeddingsConfig(BaseModel):
     )
 
 
-class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
+class ImageEmbeddingsIndexer(ChunkIndexer[VectorType, ImageEmbeddingsConfig]):
     """Represent source images as vectors calculated with multimodal embeddings model."""
 
     @staticmethod
@@ -59,8 +59,8 @@ class ImageEmbeddingsIndexer(Indexer[VectorType, ImageEmbeddingsConfig]):
         return await self._model.aembed_query(query)
 
     @log_execution_time(logger)
-    async def index_data(
-        self, data: Iterable[tuple[AnyChunk | str, IndexRecordMeta]]
+    async def index_chunks(
+        self, data: Iterable[tuple[AnyChunk, IndexRecordMeta]]
     ) -> Collection[IndexRecord[VectorType]]:
         async def _embed_image_task(chunk: ImageChunk, meta: IndexRecordMeta):
             async with self._semaphore:

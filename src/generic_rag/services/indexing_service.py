@@ -112,7 +112,7 @@ class IndexingService:
             if document.mime_type not in parser.supported_mime_types:
                 continue
 
-            async for chunk in await parser.extract_chunks(document):
+            async for chunk in parser.extract_chunks(document):
                 if isinstance(chunk, TextChunk):
                     last_text_chunk_id += 1
                     yield chunk.model_copy(update={"chunk_id": last_text_chunk_id})

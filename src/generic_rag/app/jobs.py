@@ -117,7 +117,7 @@ class JobRunner[T: JobPayload](ABC):
                 if event.type == "exception":
                     exc = pickle.loads(base64.b64decode(event.data))
                     logger.warning(f"Got exception from server: {exc}")
-                    reraise(type(exc), exc)
+                    reraise(type(exc), exc, exc.__traceback__)
 
                 yield event
 

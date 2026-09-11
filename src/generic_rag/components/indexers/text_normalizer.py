@@ -5,10 +5,9 @@ from enum import StrEnum
 from functools import lru_cache
 
 import spacy
-from pydantic import BaseModel
 from spacy.language import Language
 
-from generic_rag.components.indexers.text_indexer import TextIndexer
+from generic_rag.components.indexers.text_indexer import TextIndexer, TextIndexerConfig
 from generic_rag.types import IndexRecord, IndexRecordMeta, TextType
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,7 @@ class LanguageName(StrEnum):
     ukrainian = "ukrainian"
 
 
-class TextNormalizerConfig(BaseModel):
+class TextNormalizerConfig(TextIndexerConfig):
     language: LanguageName = LanguageName.english
 
 

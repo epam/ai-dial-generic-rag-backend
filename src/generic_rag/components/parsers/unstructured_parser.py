@@ -5,16 +5,16 @@ import os.path
 from collections.abc import AsyncGenerator, AsyncIterable
 from functools import cached_property
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 from unstructured.partition.auto import partition
 
-from generic_rag.types import ChunkMetadata, Document, DocumentParser, TextChunk
+from generic_rag.types import ChunkMetadata, Document, DocumentParser, DocumentParserConfig, TextChunk
 from generic_rag.utils.profile import log_execution_time
 
 logger = logging.getLogger(__name__)
 
 
-class UnstructuredParserConfig(BaseModel):
+class UnstructuredParserConfig(DocumentParserConfig):
     chunk_size: int = Field(default=1000, description="the chunk size for unstructured document loader")
     combine_text_under_n_chars: int = Field(
         default=100, description="combine small chunks until reaching this many characters"
@@ -31,7 +31,7 @@ class UnstructuredParserConfig(BaseModel):
 
 
 class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
-    """Parser that extracts text chunks using `unstructured` library."""
+    """Uses `unstructured` library to extract chunks."""
 
     @cached_property
     def supported_mime_types(self) -> frozenset[str]:
@@ -41,7 +41,7 @@ class UnstructuredParser(DocumentParser[UnstructuredParserConfig]):
             "text/plain",
         })
 
-    async def extract_chunks(self, document: Document) -> AsyncIterable[TextChunk]:
+    def _extract_chunks(self, document: Document) -> AsyncIterable[TextChunk]:
         return self._extract_chunks_gen(document)
 
     @log_execution_time(logger)

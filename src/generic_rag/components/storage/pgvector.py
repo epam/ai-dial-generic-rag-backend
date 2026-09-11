@@ -26,7 +26,6 @@ from sqlalchemy import (
     insert,
     select,
     text,
-    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
@@ -379,26 +378,42 @@ class TextIndexStorage(TableIndexStorage[TextType]):
             return []
 
         table = await self._get_table()
+        result: OrderedSet[IndexRecordMeta] = OrderedSet()
+        offset = 0
 
         ts_vector = func.to_tsvector(self._options.language, table.c.index)
         ts_query = func.plainto_tsquery(self._options.language, query)
 
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(
-                    self._get_metadata_expression(table, fields),
-                    func.ts_rank_cd(ts_vector, ts_query).label("rank"),
+            metadata_expression = self._get_metadata_expression(table, fields)
+            where_clause = [ts_vector.bool_op("@@")(ts_query)]
+            if documents is not None:
+                where_clause.insert(0, self._get_documents_filtering_clause(table, *documents))
+
+            while len(result) < limit:
+                scalar_result = await session.execute(
+                    select(
+                        metadata_expression,
+                        func.ts_rank_cd(ts_vector, ts_query).label("rank"),
+                    )
+                    .where(*where_clause)
+                    .order_by(text("rank desc"))
+                    .offset(bindparam("offset", offset))
+                    .limit(bindparam("limit", limit))
                 )
-                .where(
-                    self._get_documents_filtering_clause(table, *documents)
-                    if documents is not None
-                    else true(),
-                    ts_vector.bool_op("@@")(ts_query),
-                )
-                .order_by(text("rank desc"))
-                .limit(bindparam("limit", limit))
-            )
-            return [IndexRecordMeta.model_validate(raw_meta) for raw_meta, _ in result]
+
+                if not (rows := scalar_result.all()):
+                    break
+
+                for raw_meta, _ in rows:
+                    if (meta := IndexRecordMeta.model_validate(raw_meta)) not in result:
+                        result.add(meta)
+                    if len(result) >= limit:
+                        break
+
+                offset += len(rows)
+
+            return result
 
 
 class PgvectorIndexStorageOptions(BaseModel):

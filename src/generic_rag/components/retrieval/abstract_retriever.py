@@ -7,6 +7,7 @@ from typing import Annotated, NotRequired, Self, TypedDict, cast
 import tabulate
 from annotated_types import MinLen
 from injection import inject
+from opentelemetry.trace import get_tracer
 from pydantic import BaseModel, Field, NonNegativeInt, TypeAdapter, create_model
 
 from generic_rag.channel import Channel
@@ -14,13 +15,14 @@ from generic_rag.components.retrieval.document_selector import (
     AllDocumentsDocumentSelector,
     DocumentSelector,
 )
-from generic_rag.components.search_index import ChunkIndex, tracer
+from generic_rag.components.search_index import ChunkIndex
 from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.types import Answer, AnswerStage, ChunkRef, Document, RetrievedDocument, Retriever
 from generic_rag.utils.answers import NoopStage
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class FailedRetrieverError(Exception): ...
@@ -162,7 +164,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
         )
 
     async def _index_search(
-        self, query: str, index: ChunkIndex, top_k: int, documents: list[int] | None = None
+        self, query: str, index: ChunkIndex, top_k: int, documents: Sequence[int] | None = None
     ) -> Sequence[RetrievedDocument]:
         """
         Run search in given index.
