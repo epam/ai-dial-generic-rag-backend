@@ -66,7 +66,9 @@ class PlainAnswer(Answer):
         self._content += content
 
     async def add_citation(self, citation_index: int, doc: RetrievedDocument):
-        self.append_content(f"[{doc.source_id, doc.source_page_number}]")
+        # Name both parts, so a consumer reading the text alone can tell the document from the page.
+        # This is the form `get_pages` emits, so the whole MCP server cites documents the same way.
+        self.append_content(f"[Document {doc.source_id}, Page {doc.source_page_number}]")
         self._has_references = True
 
     async def add_reference(self, citation_index: int, doc: RetrievedDocument):
