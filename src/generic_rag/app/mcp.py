@@ -332,7 +332,7 @@ async def rag_search(
     Run RAG search pipeline (retrieval + generation) across indexed documents.
     Returns LLM-generated summary (not raw retrieval artifacts).
     Allows to restrict search to specific documents or to filter by metadata fields.
-    Response contains document citations in `(document, page)` format.
+    Response contains document citations in `[Document <id>, Page <number>]` format.
     """
     channel = await afind_instance(Channel)
 
