@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from injection import inject, scoped
+from opentelemetry.trace import get_tracer
 
 from generic_rag.channel import Channel
 from generic_rag.scope import ScopeName
@@ -16,6 +17,7 @@ from generic_rag.utils.profile import log_execution_time
 INDEXING_BATCH_SIZE = 1000  # todo: get from config
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class DocumentStatusUpdateHelper:
@@ -112,13 +114,14 @@ class IndexingService:
             if document.mime_type not in parser.supported_mime_types:
                 continue
 
-            async for chunk in parser.extract_chunks(document):
-                if isinstance(chunk, TextChunk):
-                    last_text_chunk_id += 1
-                    yield chunk.model_copy(update={"chunk_id": last_text_chunk_id})
-                elif isinstance(chunk, ImageChunk):
-                    last_image_chunk_id += 1
-                    yield chunk.model_copy(update={"chunk_id": last_image_chunk_id})
+            with tracer.start_as_current_span("document-parse"):
+                async for chunk in parser.extract_chunks(document):
+                    if isinstance(chunk, TextChunk):
+                        last_text_chunk_id += 1
+                        yield chunk.model_copy(update={"chunk_id": last_text_chunk_id})
+                    elif isinstance(chunk, ImageChunk):
+                        last_image_chunk_id += 1
+                        yield chunk.model_copy(update={"chunk_id": last_image_chunk_id})
 
         logger.info(f"extracted {last_text_chunk_id + last_image_chunk_id} chunk(s)")
 
