@@ -31,6 +31,15 @@ class TextIndexerConfig(BaseModel):
         pattern=r"^\$(?:\.[a-zA-Z_][a-zA-Z0-9_*]*|\?|\[(?:[0-9*]+|'[^']+'|\"[^\"]+\")\])*$",
         examples=["$.description[*].text"],
     )
+    concatenate_fields: bool = Field(
+        default=False,
+        description=(
+            "Controls if values extracted with JSON-path expression (set by `target`) "
+            "should be concatenated in single text element before indexing (if `true` - "
+            "will emit single index record per chunk, otherwise all extracted values will "
+            "be emitted as separate index records referring the same chunk)."
+        ),
+    )
 
 
 class TextIndexer[IndexT: TextType | VectorType, ConfigT: TextIndexerConfig = TextIndexerConfig](
@@ -56,13 +65,18 @@ class TextIndexer[IndexT: TextType | VectorType, ConfigT: TextIndexerConfig = Te
 
         for chunk, meta in data:
             if self._target_path:
-                for match in self._target_path.find(chunk.metadata.model_dump()):
-                    if not (isinstance(match.value, str) and len(match.value)):
-                        continue
-                    texts.append(match.value)
+                matched_values = [
+                    match.value
+                    for match in self._target_path.find(chunk.metadata.model_dump())
+                    if isinstance(match.value, str) and len(match.value)
+                ]
+                if matched_values and self.config.concatenate_fields:
+                    matched_values = ["\n".join(matched_values)]
+                for text in matched_values:
+                    texts.append(text)
                     record_metas.append(
                         meta.model_copy(
-                            update={"text": match.value},
+                            update={"text": text},
                         )
                     )
 
