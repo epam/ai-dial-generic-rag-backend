@@ -18,25 +18,22 @@ from generic_rag.utils.profile import log_execution_time
 logger = logging.getLogger(__name__)
 
 PAGE_DESCRIPTION_PROMPT_TEMPLATE = """
-Please create a detailed description of the provided page image for a search index.
-Ignore page header, footer, basic logo and background.
-Text with bullet points is NOT a table or image.
+Index this page image for keyword and semantic search.
+Ignore page header, footer, logo and background. Text with bullet points is NOT a table or image.
 
-Describe every table and every chart on the page. These descriptions are searched by users
-asking about specific values, so name the concrete things a query could mention:
+Write compact notes, not prose. No opening clauses, no "the page shows". Use "label: value" items
+separated by semicolons. Every word should be a term someone could type into a search box; drop
+filler words, articles and connectives. Do not repeat the same entity name in several items.
 
-- the title or caption, and the subject of the table or chart
-- the units and currencies used, and the years or time period covered
-- for a table: the row and column names, and the values of notable cells — totals,
-  subtotals, extremes, and any figures highlighted by the document
-- for a chart: the axis labels, the legend series names, and the approximate values of
-  notable points — start, end, peaks, and crossovers, each with its unit
-- the countries, regions, companies and perils involved
+For every table and every chart, name what it is about, never what it says:
+title or caption; units and currency; years or period covered; row names; column names;
+legend or series names; countries, regions, companies, perils, products involved.
+Do NOT copy any figure, value or percentage out of a table or chart: the index needs the terms a
+question would use, and the page itself is what answers it.
 
-Describe other images (photo, illustration, diagram) briefly.
+Other images (photo, illustration, diagram): one short phrase.
 
-Use only information visible on the page.
-DO NOT make up an answer.
+Use only what is visible on the page. Do not invent anything.
 
 Make sure to properly escape special characters, like double quotes, in string fields.
 """
