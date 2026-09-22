@@ -36,14 +36,14 @@ class ChannelCompletion(ChatCompletion):
                             f"```json\n{json.dumps(channel.dump_config(), indent=2)}\n```\n\n"
                         )
 
-                    await self._channel_completion(answer, request, response, channel)
+                    await self._channel_completion(answer, request, channel)
 
                 except Exception as e:
                     with answer.create_stage("Internal error", debug=True):
                         raise InternalServerError(f"Unexpected error: {str(e)}") from e
 
     @staticmethod
-    async def _channel_completion(answer: Answer, request: Request, response: Response, channel: Channel):
+    async def _channel_completion(answer: Answer, request: Request, channel: Channel):
         """Chat completion logic for specific channel."""
         with answer.create_stage("Request configuration", debug=True) as stage:
             request_config_model = await RequestConfig.get_dynamic_model()
@@ -73,8 +73,6 @@ class ChannelCompletion(ChatCompletion):
 
             with answer.create_stage("Token usage", debug=True) as stage:
                 stage.append_content(f"```text\n{str(cb)}\n```\n\n")
-
-            response.set_usage(cb.prompt_tokens, cb.completion_tokens)
 
     async def configuration(self, request: ConfigurationRequest) -> ConfigurationResponse | dict:
         """Chat completion configuration entrypoint."""
