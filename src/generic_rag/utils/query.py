@@ -1,5 +1,7 @@
+import enum
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Annotated
 
 from annotated_types import Interval
@@ -26,3 +28,14 @@ class PaginatedResults[T](BaseModel):
             limit=pagination.limit,
             total_count=total_count,
         )
+
+
+@enum.unique
+class SortDirection(StrEnum):
+    asc = enum.auto()
+    desc = enum.auto()
+
+
+class SortBy(BaseModel):
+    field: str
+    direction: SortDirection = SortDirection.asc

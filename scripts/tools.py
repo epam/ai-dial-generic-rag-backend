@@ -226,7 +226,7 @@ async def _import_channel(application_id: str, archive_path: str, force: bool):
             if diff := DeepDiff(
                 expected_channel_config,
                 channel_config,
-                exclude_paths=["channel_key", "retriever", "generation"],
+                exclude_paths=["channel_key", "retriever", "generation", "mcp"],
                 view=COLORED_COMPACT_VIEW,
             ):
                 if force:

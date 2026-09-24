@@ -1,10 +1,8 @@
 import asyncio
-import enum
 import hashlib
 import logging
 import os
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sequence
-from enum import StrEnum
 from pathlib import PosixPath
 from typing import ClassVar, Self
 from urllib.parse import unquote
@@ -13,7 +11,7 @@ import jsonschema
 from aidial_sdk.exceptions import InvalidRequestError, RequestValidationError, ResourceNotFoundError
 from fastapi import UploadFile
 from injection import inject, scoped
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import UnaryExpression, and_, bindparam, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import SQLORMExpression
@@ -26,23 +24,12 @@ from generic_rag.scope import ScopeName
 from generic_rag.services.document_matcher import DocumentMatcher, DocumentMatcherConfig
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.types import Document, DocumentStatus, FileMetadata, FileStorage
-from generic_rag.utils.pagination import PaginatedResults, Pagination
 from generic_rag.utils.profile import log_execution_time
+from generic_rag.utils.query import PaginatedResults, Pagination, SortBy, SortDirection
 from generic_rag.utils.ranking import rank_fusion
 from generic_rag.utils.repository import RepositoryMixin
 
 logger = logging.getLogger(__name__)
-
-
-@enum.unique
-class SortDirection(StrEnum):
-    asc = enum.auto()
-    desc = enum.auto()
-
-
-class SortBy(BaseModel):
-    field: str
-    direction: SortDirection
 
 
 def validate_content_type(content_type: str, supported_content_types: frozenset) -> None:

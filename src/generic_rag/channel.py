@@ -31,6 +31,7 @@ from generic_rag.types import (
     DocumentParser,
     Retriever,
 )
+from generic_rag.utils.query import SortBy
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,21 @@ METADATA_SCHEMA_EXAMPLE = {
     },
     "additionalProperties": True,
 }
+
+
+class McpConfig(BaseModel):
+    """MCP-related config options."""
+
+    newest_sort: list[SortBy] | None = Field(
+        None,
+        description="Defines expression to apply sorting by recency",
+        min_length=1,
+    )
+    filterable_fields: set[str] | None = Field(
+        None,
+        description="Defines the subset of metadata fields allowed to be used for metadata filters",
+        min_length=1,
+    )
 
 
 class ProcessingConfig[ParserT: BaseModel, IndexT: IndexConfig](BaseModel, ABC):
@@ -173,6 +189,8 @@ class RequestConfig(BaseModel, ABC):
 class ChannelConfig(RequestConfig, ProcessingConfig, ABC):
     """Channel configuration schema."""
 
+    mcp: McpConfig | None = None
+
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         super().__pydantic_init_subclass__(**kwargs)
@@ -226,6 +244,10 @@ class Channel:
     def metadata_schema(self):
         """JSON schema of metadata that can be associated with documents of this channel."""
         return copy.deepcopy(self._config.metadata_schema)
+
+    @cached_property
+    def mcp_config(self) -> McpConfig:
+        return self._config.mcp or McpConfig()
 
     @cached_property
     def allowed_document_types(self) -> frozenset[str]:
