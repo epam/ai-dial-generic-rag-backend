@@ -166,7 +166,7 @@ class DefaultChatPromptChain[Input: DefaultChatPromptChainInputSchema, Output: l
     def _format_attributes(i: int, doc: RetrievedDocument, source_attributes: list[str]) -> str:
         attributes = [
             ("id", i),
-            ("document", doc.source_display_name),
+            ("document", doc.source_title),
             ("page_number", doc.source_page_number),
         ]
         if source_attributes:
@@ -207,8 +207,6 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
             found_items=found_items,
         )
 
-        used_references: list[int] = []
-
         async for item in generation_chain.astream(chain_input):
             if item.content:
                 answer.append_content(item.content)
@@ -219,11 +217,4 @@ class DefaultAnswerGenerator(AnswerGenerator[DefaultAnswerGeneratorConfig]):
                     )
                     continue
 
-                if item.reference not in used_references:
-                    used_references.append(item.reference)
-                    citation_index = len(used_references)
-                    await answer.add_reference(citation_index, found_items[item.reference])
-                else:
-                    citation_index = used_references.index(item.reference) + 1
-
-                await answer.add_citation(citation_index, found_items[item.reference])
+                await answer.add_citation(found_items[item.reference])

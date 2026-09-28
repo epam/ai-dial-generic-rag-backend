@@ -1,12 +1,10 @@
 services:
   themes:
-    image: epam/ai-dial-chat-themes:0.17.0
-    ports:
-      - "3001:8080"
+    image: epam/ai-dial-chat-themes:0.20.0
     restart: unless-stopped
 
   chat:
-    image: epam/ai-dial-chat:0.47.3
+    image: epam/ai-dial-chat:0.49.3
     ports:
       - "3000:3000"
     depends_on:

@@ -12,5 +12,5 @@ class RetrievalOnlyAnswerGenerator(AnswerGenerator):
         :param retriever: the :class:`Retriever` used to find relevant chunk information
         :param answer: the current answer
         """
-        for i, doc in enumerate(await retriever.invoke(query, answer), start=1):
-            await answer.add_reference(i, doc)
+        for doc in await retriever.invoke(query, answer):
+            await answer.add_citation(doc)

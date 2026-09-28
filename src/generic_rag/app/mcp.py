@@ -35,7 +35,6 @@ from generic_rag.types import (
     AnswerGenerator,
     ChunkType,
     Document,
-    FileStorage,
     ImageChunk,
     ImageType,
     RetrievedDocument,
@@ -236,16 +235,12 @@ async def get_citation_url(
 ) -> dict[int, str]:
     """Share given documents with a user. Returns a mapping of `{id: url}`."""
     document_service = await afind_instance(DocumentService)
-    file_storage = await afind_instance(FileStorage)
 
     documents = await document_service.get_documents_by_id(document_ids)
     async with TaskGroup() as task_group:
         tasks = {
             doc.id: task_group.create_task(
-                file_storage.copy_file_to_user(
-                    doc.url,
-                    doc.display_name,
-                )
+                doc.share_with_user(),
             )
             for doc in documents
         }

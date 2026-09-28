@@ -19,8 +19,8 @@ from pydantic import (
 logger = logging.getLogger(__name__)
 
 
-class DatabaseConfig(BaseModel):
-    """Configuration for database connection."""
+class DatabaseSettings(BaseModel):
+    """Settings for database connection."""
 
     host: str = Field(description="Postgresql database host")
     port: int = Field(default=5432, description="Postgresql database port")
@@ -42,7 +42,7 @@ class DatabaseConfig(BaseModel):
 
 
 class ElasticsearchSettings(BaseModel):
-    """Configuration for Elasticsearch connection."""
+    """Settings for Elasticsearch connection."""
 
     url: HttpUrl
     username: str
@@ -95,6 +95,18 @@ class InMemoryCacheSettings(BaseModel):
     )
 
 
+class ChatSettings(BaseModel):
+    """Settings for chat completion interface."""
+
+    enable_debug_stages: bool = Field(False, description="enable debug stages reporting")
+    enable_annotations: bool = Field(
+        True, description="use annotations provided by Chat UI 1.* for citations"
+    )
+    enable_thumbnails: bool = Field(
+        False, description="include thumbnails for image chunks in citation quotes"
+    )
+
+
 class ApplicationSettings(BaseModel):
     """Main application settings class."""
 
@@ -105,9 +117,11 @@ class ApplicationSettings(BaseModel):
         description="URL where DIAL core is publicly accessible (used to generate interactive documentation).",
     )
     in_memory_cache: InMemoryCacheSettings = InMemoryCacheSettings()
-    database: DatabaseConfig = Field(..., description="Configuration for postgres/vector database connection")
+    database: DatabaseSettings = Field(
+        ..., description="Configuration for postgres/vector database connection"
+    )
     elasticsearch: ElasticsearchSettings | None = Field(None, description="Elasticsearch settings")
-    enable_debug_stages: bool = Field(False, description="enable debug stages reporting")
+    chat: ChatSettings = ChatSettings()
 
 
 def get_app_settings() -> ApplicationSettings:
@@ -116,7 +130,7 @@ def get_app_settings() -> ApplicationSettings:
         "dial_api_key": os.environ.get("DIAL_API_KEY"),
         "dial_public_url": os.environ.get("DIAL_PUBLIC_URL"),
         "in_memory_cache": {
-            "enabled": os.environ.get("IN_MEMORY_CACHE_ENABLED", "yes"),
+            "enabled": os.environ.get("IN_MEMORY_CACHE_ENABLED", "true"),
             "capacity": os.environ.get("IN_MEMORY_CACHE_CAPACITY", "128MiB"),
         },
         "database": {
@@ -125,7 +139,7 @@ def get_app_settings() -> ApplicationSettings:
             "dbname": os.getenv("DB_NAME"),
             "username": os.getenv("DB_USERNAME"),
             "password": os.getenv("DB_PASSWORD"),
-            "msi_enabled": os.getenv("DB_MSI_ENABLED", "no"),
+            "msi_enabled": os.getenv("DB_MSI_ENABLED", "false"),
         },
         "elasticsearch": {
             "url": os.getenv("ELASTICSEARCH_URL"),
@@ -135,7 +149,11 @@ def get_app_settings() -> ApplicationSettings:
         }
         if os.getenv("ELASTICSEARCH_URL")
         else None,
-        "enable_debug_stages": os.getenv("ENABLE_DEBUG_STAGES", "no"),
+        "chat": {
+            "enable_debug_stages": os.getenv("ENABLE_DEBUG_STAGES", "false"),
+            "enable_annotations": os.getenv("ENABLE_ANNOTATIONS", "true"),
+            "enable_thumbnails": os.getenv("ENABLE_QUOTE_THUMBNAILS", "false"),
+        },
     }
     try:
         return ApplicationSettings.model_validate(raw_config)
