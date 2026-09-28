@@ -100,7 +100,7 @@ or from oldest to newest when `newest_first` is false.
 The order does not reflect relevance, so do not use it to identify the "top" documents.
 """
 
-_LIST_DOCUMENTS_UNSORTED_DESCRIPTION = """
+_LIST_DOCUMENTS_UNORDERED_DESCRIPTION = """
 List indexed documents with their metadata.
 Supports filtering by metadata fields and paginating with `offset` and `limit`.
 Results are in an arbitrary order, not sorted by relevance, date or recency,
@@ -459,14 +459,14 @@ class DynamicSchemasTransform(Transform):
                 )
 
             if current_tool.name == list_documents.__name__:
-                is_unsorted = channel.mcp_config.newest_sort is None
+                is_unordered = channel.mcp_config.newest_sort is None
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
                     description=(
-                        _LIST_DOCUMENTS_UNSORTED_DESCRIPTION if is_unsorted else transformed.description
+                        _LIST_DOCUMENTS_UNORDERED_DESCRIPTION if is_unordered else transformed.description
                     ),
                     transform_args={
-                        "newest_first": ArgTransform(hide=is_unsorted),
+                        "newest_first": ArgTransform(hide=is_unordered),
                     },
                     output_schema=TypeAdapter(PaginatedResults[document_metadata_model]).json_schema(),
                 )
