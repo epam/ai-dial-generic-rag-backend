@@ -53,7 +53,7 @@ class McpConfig(BaseModel):
 
     newest_sort: list[SortBy] | None = Field(
         None,
-        description="Defines expression to apply sorting by recency",
+        description="Sort expression that orders documents from newest to oldest; use `desc` for date fields.",
         min_length=1,
     )
     filterable_fields: set[str] | None = Field(

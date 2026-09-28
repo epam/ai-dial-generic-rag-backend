@@ -43,7 +43,7 @@ from generic_rag.types import (
     TextChunk,
 )
 from generic_rag.utils.answers import PlainAnswer
-from generic_rag.utils.query import PaginatedResults, Pagination, SortBy
+from generic_rag.utils.query import PaginatedResults, Pagination
 
 GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
     os.getenv("MCP_GET_PAGES_LIMIT", "10"),
@@ -92,7 +92,26 @@ class DocumentMetadata(BaseModel):
         )
 
 
-@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+_LIST_DOCUMENTS_WITH_SORTING_DESCRIPTION = """
+List indexed documents with their metadata.
+Supports filtering by metadata fields and paginating with `offset` and `limit`.
+Results are always sorted by recency: from newest to oldest by default,
+or from oldest to newest when `newest_first` is false.
+The order does not reflect relevance, so do not use it to identify the "top" documents.
+"""
+
+_LIST_DOCUMENTS_UNSORTED_DESCRIPTION = """
+List indexed documents with their metadata.
+Supports filtering by metadata fields and paginating with `offset` and `limit`.
+Results are in an arbitrary order, not sorted by relevance, date or recency,
+so do not use the first page to identify the "latest", "top", "first" or "last" documents.
+"""
+
+
+@provider.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    description=_LIST_DOCUMENTS_WITH_SORTING_DESCRIPTION,
+)
 async def list_documents(
     metadata_filter: Annotated[
         dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
@@ -103,14 +122,13 @@ async def list_documents(
         int, Field(ge=0, description="Maximum number of results to return, for pagination")
     ] = 25,
     newest_first: Annotated[
-        bool, Field(description="Order results by recency from newest to oldest.")
-    ] = False,
+        bool,
+        Field(description="Sort from newest to oldest. Set to false to sort from oldest to newest."),
+    ] = True,
 ) -> dict[str, Any]:
     """
     List indexed documents along with their metadata.
     Allows to filter by metadata fields and paginate the results.
-    Pagination does not imply ranking or recency.
-    Do not use the first page of results to infer “latest”, “top”, “first”, or “last” documents.
     """
     document_service = await afind_instance(DocumentService)
     stats_service = await afind_instance(DocumentStatsService)
@@ -125,8 +143,14 @@ async def list_documents(
     )
 
     pagination = Pagination(offset, limit)
-    sort_by: list[SortBy] | None = (
-        channel.mcp_config.newest_sort if newest_first and channel.mcp_config.newest_sort else None
+    sort_by = (
+        (
+            channel.mcp_config.newest_sort
+            if newest_first
+            else [~sort for sort in channel.mcp_config.newest_sort]
+        )
+        if channel.mcp_config.newest_sort
+        else None
     )
 
     documents_list = await document_service.list_documents(pagination, matcher_config, sort_by)
@@ -435,11 +459,14 @@ class DynamicSchemasTransform(Transform):
                 )
 
             if current_tool.name == list_documents.__name__:
-                # noinspection PyTypeHints
+                is_unsorted = channel.mcp_config.newest_sort is None
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
+                    description=(
+                        _LIST_DOCUMENTS_UNSORTED_DESCRIPTION if is_unsorted else transformed.description
+                    ),
                     transform_args={
-                        "newest_first": ArgTransform(hide=channel.mcp_config.newest_sort is None),
+                        "newest_first": ArgTransform(hide=is_unsorted),
                     },
                     output_schema=TypeAdapter(PaginatedResults[document_metadata_model]).json_schema(),
                 )

@@ -192,9 +192,9 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
             )
 
         if sort.direction == SortDirection.desc:
-            return column.desc()
+            return column.desc().nulls_last()
 
-        return column.asc()
+        return column.asc().nulls_last()
 
 
 class _Document(Document):
