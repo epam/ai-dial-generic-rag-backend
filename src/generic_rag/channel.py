@@ -51,6 +51,9 @@ METADATA_SCHEMA_EXAMPLE = {
 class McpConfig(BaseModel):
     """MCP-related config options."""
 
+    # TODO: validate field names against the channel's metadata schema when the config is saved.
+    #  Now an unknown or unsortable field in `newest_sort` makes every `list_documents` call fail,
+    #  and unknown fields in `filterable_fields` are silently dropped from the metadata filter model.
     newest_sort: list[SortBy] | None = Field(
         None,
         description="Sort expression that orders documents from newest to oldest; use `desc` for date fields.",

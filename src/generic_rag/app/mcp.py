@@ -126,10 +126,6 @@ async def list_documents(
         Field(description="Sort from newest to oldest. Set to false to sort from oldest to newest."),
     ] = True,
 ) -> dict[str, Any]:
-    """
-    List indexed documents along with their metadata.
-    Allows to filter by metadata fields and paginate the results.
-    """
     document_service = await afind_instance(DocumentService)
     stats_service = await afind_instance(DocumentStatsService)
     channel = await afind_instance(Channel)
@@ -278,9 +274,8 @@ class RetrievedChunk(BaseModel):
                         else doc.source_metadata
                     ),
                 )
-            # NOTE: don't include image chunks -
-            # they bloat the context and likely don't bring much value.
-            # we expose get_page tool with image mode.
+            # NOTE: don't include image chunks - they bloat the context.
+            # They are exposed in the get_pages tool with image mode.
 
 
 def _get_retriever_overrides(document_ids: list[int] | None, metadata_filter: dict[str, Any] | None):

@@ -122,11 +122,13 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
         else:
             where_clause = DocumentEntity.channel_key == self._channel_key
 
-        order_clause = (
-            [self._get_field_order_expression(item) for item in sort]
-            if sort
-            else [DocumentEntity.document_id.desc()]
-        )
+        order_clause = [self._get_field_order_expression(item) for item in sort or []]
+        # NOTE: sorted fields may have equal values, so `document_id` is always the last key:
+        # without a total order, offset pagination may repeat or skip documents across pages.
+        if sort and sort[-1].direction == SortDirection.asc:
+            order_clause.append(DocumentEntity.document_id.asc())
+        else:
+            order_clause.append(DocumentEntity.document_id.desc())
 
         result = await get_current_session().scalars(
             select(DocumentEntity)
