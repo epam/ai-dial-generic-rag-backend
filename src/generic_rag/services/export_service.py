@@ -27,8 +27,8 @@ from generic_rag.services.chunk_service import ChunkService
 from generic_rag.services.document_service import DocumentService
 from generic_rag.types import AnyChunk, Document, DocumentStatus, FileMetadata, FileStorage, IndexRecord
 from generic_rag.utils.iterables import batched_async
-from generic_rag.utils.pagination import Pagination
 from generic_rag.utils.profile import log_execution_time
+from generic_rag.utils.query import Pagination
 
 tracer = get_tracer(__name__)
 logger = logging.getLogger(__name__)
@@ -265,7 +265,7 @@ class ExportService:
                 if diff := DeepDiff(
                     self._channel.dump_config(),
                     channel_config,
-                    exclude_paths=["channel_key", "retriever", "generation"],
+                    exclude_paths=["channel_key", "retriever", "generation", "mcp"],
                 ):
                     raise InvalidRequestError(
                         "The archive is not compatible with the channel.", detail=json.loads(diff.to_json())

@@ -14,7 +14,7 @@ make install_all    # install + download spacy models (en_core_web_sm, uk_core_n
 make lint           # poetry check --lock, ruff check, ruff format --check
 make format         # ruff check --fix && ruff format
 make test           # pytest tests/unit -v
-make up             # start dependency stack via docker compose (DIAL core, chat UI, redis, pgvector, elasticsearch, mcp-inspector)
+make up             # start dependency stack via docker compose (DIAL core, chat UI, redis, pgvector, elasticsearch)
 make main           # run the app locally (uvicorn on port 5000)
 make run            # run the app itself in docker too
 make down           # stop containers; make cleanup also removes data volumes
@@ -53,6 +53,6 @@ To add a new parser/indexer/retriever/generator/backend: subclass the base with 
 
 **Database.** Async SQLAlchemy (asyncpg) + pgvector; entities in `db/entities.py`. Migrations are raw SQL files in `db/migrations/` run by yoyo automatically at startup (`db/connection.py`, via the psycopg driver).
 
-**MCP server** (`app/mcp.py`). FastMCP mounted at `/mcp/streamable-http` (stateless HTTP), exposing `list_documents_unordered`, `get_page`, `retrieve_text_chunks`, `rag_search`. Tool arg/output schemas are rewritten at list-time by `DynamicSchemasTransform` to inject channel-specific metadata-filter models. See `MCP.md` for endpoint URL construction and client setup.
+**MCP server** (`app/mcp.py`). FastMCP mounted at `/mcp/streamable-http` (stateless HTTP), exposing `list_documents`, `get_pages`, `get_citation_url`, `retrieve_text_chunks`, `rag_search`. Tool arg/output schemas are rewritten at list-time by `DynamicSchemasTransform` to inject channel-specific metadata-filter models. The channel's `mcp` config section controls two things: `newest_sort` makes `list_documents` sort by recency and exposes its `newest_first` argument (hidden otherwise), and `filterable_fields` narrows the metadata-filter model to the listed fields. See `MCP.md` for endpoint URL construction and client setup.
 
 **Chat completion flow** (`app/chat_completion.py`): resolve channel → merge request config → `Retriever.create(...)` with a stage listener that mirrors retrieval progress into DIAL `[DEBUG]` stages → `AnswerGenerator.invoke(...)` streams content and reference attachments into the response choice.

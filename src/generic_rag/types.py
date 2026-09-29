@@ -625,9 +625,9 @@ class LlmConfig(BaseModel):
         default=3,
         description="Maximum number of retries to make when performing requests to the LLM.",
     )
-    reasoning_effort: str | None = Field(
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = Field(
         default=None,
-        description="Reasoning effort for reasoning models (for example minimal, low, medium, high).",
+        description="Reasoning effort for reasoning models. Supported values depend on the model.",
     )
 
 

@@ -1,6 +1,8 @@
+import enum
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated
+from enum import StrEnum
+from typing import Annotated, Self
 
 from annotated_types import Interval
 from pydantic import BaseModel
@@ -25,4 +27,28 @@ class PaginatedResults[T](BaseModel):
             offset=pagination.offset,
             limit=pagination.limit,
             total_count=total_count,
+        )
+
+
+@enum.unique
+class SortDirection(StrEnum):
+    asc = enum.auto()
+    desc = enum.auto()
+
+
+class SortBy(BaseModel):
+    field: str
+    direction: SortDirection = SortDirection.asc
+
+    def __invert__(self) -> Self:
+        match self.direction:
+            case SortDirection.asc:
+                direction = SortDirection.desc
+            case SortDirection.desc:
+                direction = SortDirection.asc
+
+        return self.model_copy(
+            update={
+                "direction": direction,
+            }
         )

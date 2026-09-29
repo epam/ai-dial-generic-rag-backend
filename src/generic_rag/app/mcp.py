@@ -43,7 +43,7 @@ from generic_rag.types import (
     TextChunk,
 )
 from generic_rag.utils.answers import PlainAnswer
-from generic_rag.utils.pagination import PaginatedResults, Pagination
+from generic_rag.utils.query import PaginatedResults, Pagination
 
 GET_PAGES_LIMIT = TypeAdapter(Annotated[int, Gt(0)]).validate_python(
     os.getenv("MCP_GET_PAGES_LIMIT", "10"),
@@ -92,8 +92,27 @@ class DocumentMetadata(BaseModel):
         )
 
 
-@provider.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
-async def list_documents_unordered(
+_LIST_DOCUMENTS_WITH_SORTING_DESCRIPTION = """
+List indexed documents with their metadata.
+Supports filtering by metadata fields and paginating with `offset` and `limit`.
+Results are always sorted by recency: from newest to oldest by default,
+or from oldest to newest when `newest_first` is false.
+The order does not reflect relevance, so do not use it to identify the "top" documents.
+"""
+
+_LIST_DOCUMENTS_UNORDERED_DESCRIPTION = """
+List indexed documents with their metadata.
+Supports filtering by metadata fields and paginating with `offset` and `limit`.
+Results are in an arbitrary order, not sorted by relevance, date or recency,
+so do not use the first page to identify the "latest", "top", "first" or "last" documents.
+"""
+
+
+@provider.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    description=_LIST_DOCUMENTS_WITH_SORTING_DESCRIPTION,
+)
+async def list_documents(
     metadata_filter: Annotated[
         dict[str, Any] | None,  # NOTE: this type is going to be overwritten by ArgTransform
         Field(description="Filter by metadata fields"),
@@ -102,15 +121,14 @@ async def list_documents_unordered(
     limit: Annotated[
         int, Field(ge=0, description="Maximum number of results to return, for pagination")
     ] = 25,
+    newest_first: Annotated[
+        bool,
+        Field(description="Sort from newest to oldest. Set to false to sort from oldest to newest."),
+    ] = True,
 ) -> dict[str, Any]:
-    """
-    List indexed documents along with their metadata.
-    Allows to filter by metadata fields and paginate the results.
-    Results are unsorted and unordered. Pagination does not imply ranking or recency.
-    Do not use the first page of results to infer “latest”, “top”, “first”, or “last” documents.
-    """
     document_service = await afind_instance(DocumentService)
     stats_service = await afind_instance(DocumentStatsService)
+    channel = await afind_instance(Channel)
 
     matcher_config = (
         (await DocumentMatcherConfig.get_dynamic_model()).model_validate(
@@ -121,7 +139,17 @@ async def list_documents_unordered(
     )
 
     pagination = Pagination(offset, limit)
-    documents_list = await document_service.list_documents(pagination, matcher_config)
+    sort_by = (
+        (
+            channel.mcp_config.newest_sort
+            if newest_first
+            else [~sort for sort in channel.mcp_config.newest_sort]
+        )
+        if channel.mcp_config.newest_sort
+        else None
+    )
+
+    documents_list = await document_service.list_documents(pagination, matcher_config, sort_by)
     documents_stats: dict[int, DocumentStats] = {
         doc_stats.document_id: doc_stats
         for doc_stats in await stats_service.get_document_stats(*[doc.id for doc in documents_list.results])
@@ -246,9 +274,8 @@ class RetrievedChunk(BaseModel):
                         else doc.source_metadata
                     ),
                 )
-            # NOTE: don't include image chunks -
-            # they bloat the context and likely don't bring much value.
-            # we expose get_page tool with image mode.
+            # NOTE: don't include image chunks - they bloat the context.
+            # They are exposed in the get_pages tool with image mode.
 
 
 def _get_retriever_overrides(document_ids: list[int] | None, metadata_filter: dict[str, Any] | None):
@@ -399,7 +426,9 @@ class DynamicSchemasTransform(Transform):
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """List tools with transformation applied."""
-        single_filter_model = await SingleFilterModel.get_dynamic_model()
+        channel = await afind_instance(Channel)
+
+        metadata_filter_model = await self._get_metadata_filter_model()
         document_metadata_model = await DocumentMetadata.get_dynamic_model()
 
         result: list[Tool] = []
@@ -408,7 +437,7 @@ class DynamicSchemasTransform(Transform):
             transformed = current_tool
 
             if current_tool.name in {
-                list_documents_unordered.__name__,
+                list_documents.__name__,
                 retrieve_text_chunks.__name__,
                 rag_search.__name__,
             }:
@@ -419,20 +448,46 @@ class DynamicSchemasTransform(Transform):
                         # specifically, we need to match `x | None` signature.
                         # if original is `dict | None`,
                         # setting `single_filter_model` here (not `single_filter_model | None`)
-                        # leads to mistakes in json schema and GPT models failing to use the tool.
-                        "metadata_filter": ArgTransform(type=single_filter_model | None)
+                        # leads to mistakes in JSON schema and GPT models failing to use the tool.
+                        "metadata_filter": ArgTransform(type=metadata_filter_model | None)
                     },
                 )
 
-            if current_tool.name == list_documents_unordered.__name__:
-                # noinspection PyTypeHints
+            if current_tool.name == list_documents.__name__:
+                is_unordered = channel.mcp_config.newest_sort is None
                 transformed = TransformedTool.from_tool(
                     tool=transformed,
+                    description=(
+                        _LIST_DOCUMENTS_UNORDERED_DESCRIPTION if is_unordered else transformed.description
+                    ),
+                    transform_args={
+                        "newest_first": ArgTransform(hide=is_unordered),
+                    },
                     output_schema=TypeAdapter(PaginatedResults[document_metadata_model]).json_schema(),
                 )
 
             result.append(transformed)
 
+        return result
+
+    @staticmethod
+    @inject
+    async def _get_metadata_filter_model(channel: Channel = NotImplemented) -> type[SingleFilterModel]:
+        result = await SingleFilterModel.get_dynamic_model()
+        if channel.mcp_config.filterable_fields:
+            result = create_model(
+                result.__name__,
+                __base__=SingleFilterModel,
+                __doc__=result.__doc__,
+                **{
+                    name: (
+                        field_info.rebuild_annotation(),
+                        field_info,
+                    )
+                    for name, field_info in result.model_fields.items()
+                    if name in channel.mcp_config.filterable_fields
+                },
+            )
         return result
 
 

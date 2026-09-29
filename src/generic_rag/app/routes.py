@@ -51,14 +51,14 @@ from generic_rag.channel import METADATA_SCHEMA_EXAMPLE, Channel
 from generic_rag.scope import ChannelBindings, DialApplicationId
 from generic_rag.services.channel_service import ChannelService
 from generic_rag.services.document_matcher import DocumentMatcherConfig
-from generic_rag.services.document_service import DocumentService, SortBy, SortDirection
+from generic_rag.services.document_service import DocumentService
 from generic_rag.services.document_stats_service import ChannelChunkStats, DocumentStatsService
 from generic_rag.services.export_service import ExportService
 from generic_rag.services.facade_service import ChannelArchiveStatus, FacadeService
 from generic_rag.services.metadata_service import MetadataService
 from generic_rag.services.retrieval_service import RetrievalRequest, RetrievalResult, RetrievalService
 from generic_rag.types import Document, FileStorage
-from generic_rag.utils.pagination import PaginatedResults, Pagination
+from generic_rag.utils.query import PaginatedResults, Pagination, SortBy, SortDirection
 
 _channel = APIRouter()
 

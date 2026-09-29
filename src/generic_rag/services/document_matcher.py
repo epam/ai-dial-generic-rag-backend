@@ -1,9 +1,7 @@
 import datetime
-import enum
 import logging
 from abc import ABC
 from collections.abc import Sequence
-from enum import StrEnum
 from operator import itemgetter
 from typing import Annotated, Any, Literal
 
@@ -20,14 +18,9 @@ from generic_rag.services.metadata_service import (
     is_string_array_field,
     is_string_field,
 )
+from generic_rag.utils.query import SortDirection
 
 logger = logging.getLogger(__name__)
-
-
-@enum.unique
-class SortOrder(StrEnum):
-    asc = "asc"
-    desc = "desc"
 
 
 class TopNDocumentsModel[FieldNameT: str](BaseModel, ABC):
@@ -38,9 +31,9 @@ class TopNDocumentsModel[FieldNameT: str](BaseModel, ABC):
         min_length=1,
         description="List of metadata fields to sort documents by.",
     )
-    order: SortOrder = Field(
-        default=SortOrder.desc,
-        description=f"Sorting order (`{SortOrder.asc.name}`: from low to high, `{SortOrder.desc.name}`: from high to low)",
+    order: SortDirection = Field(
+        default=SortDirection.desc,
+        description=f"Sorting direction (`{SortDirection.asc.name}`: from low to high, `{SortDirection.desc.name}`: from high to low)",
     )
     limit: int = Field(
         default=5,
@@ -67,14 +60,10 @@ class TopNDocumentsModel[FieldNameT: str](BaseModel, ABC):
 class DateInterval(BaseModel):
     """Date interval definition."""
 
-    start: datetime.date | Literal["latest"] = None
-    end: datetime.date | Literal["latest"] = None
+    start: datetime.date | None = None
+    end: datetime.date | None = None
 
     model_config = ConfigDict(extra="forbid")
-
-    @property
-    def is_latest(self) -> bool:
-        return self.start == "latest" or self.end == "latest"
 
 
 class EnableFilterMarker:
@@ -202,7 +191,6 @@ class DocumentMatcher:
 
     def _get_filter_entry_clause(self, filter_entry: SingleFilterModel) -> ColumnElement[bool]:
         result_clauses = []
-        latest_fields = []
 
         for field_name, field_type in filter_entry.model_fields.items():
             if not any(issubclass(cls, EnableFilterMarker) for cls in field_type.metadata):
@@ -210,15 +198,8 @@ class DocumentMatcher:
 
             value = getattr(filter_entry, field_name)
 
-            if isinstance(value, DateInterval) and value.is_latest:
-                latest_fields.append(field_name)
-
-            elif (clause := self._get_field_filtering_clause(field_name, value, field_type)) is not None:
+            if (clause := self._get_field_filtering_clause(field_name, value, field_type)) is not None:
                 result_clauses.append(clause)
-
-        result_clauses.extend(
-            self._get_field_max_value_clause(field_name, result_clauses) for field_name in latest_fields
-        )
 
         if len(result_clauses) == 1:
             return result_clauses[0]
@@ -287,20 +268,6 @@ class DocumentMatcher:
 
         return None
 
-    def _get_field_max_value_clause(
-        self, name: str, filter_clauses: list[ColumnElement[bool]]
-    ) -> ColumnElement[bool]:
-        """
-        Create a new clause for a field that will match
-        its maximum value selected by applying given filter clauses.
-        """
-        key = bindparam(name, name)
-        return DocumentEntity.metadata_[key].astext.in_(
-            select(func.max(DocumentEntity.metadata_[key].astext))
-            .where(DocumentEntity.channel_key == self._channel_key, *filter_clauses)
-            .having(func.max(DocumentEntity.metadata_[key].astext).is_not(None))
-        )
-
     def _apply_top_n_documents(self, clause: ColumnElement[bool]) -> Select[tuple[int]] | None:
         if not self._config.top_n and clause is true():
             return None
@@ -314,9 +281,9 @@ class DocumentMatcher:
         order_by = [DocumentEntity.metadata_[key] for key in keys]
 
         match self._config.top_n.order:
-            case SortOrder.asc:
+            case SortDirection.asc:
                 order_by = [curr.asc() for curr in order_by]
-            case SortOrder.desc:
+            case SortDirection.desc:
                 order_by = [curr.desc() for curr in order_by]
 
         return (
