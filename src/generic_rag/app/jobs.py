@@ -27,6 +27,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from injection import afind_instance, inject, singleton
 from injection.ext.fastapi import Inject
 from pgqueuer import Job, PgQueuer, Queries
+from pgqueuer.adapters.drivers.asyncpg import AsyncpgPoolDriver
 from pgqueuer.adapters.tracing.opentelemetry import OpenTelemetryTracing
 from pgqueuer.adapters.web import create_web_router
 from pgqueuer.core.executors import (
@@ -355,9 +356,25 @@ def _executor_factory(params: EntrypointExecutorParameters) -> EntrypointExecuto
     return DatabaseRetryEntrypointExecutor(dataclasses.replace(params, func=wrapper), max_attempts=3)
 
 
+class ResilientAsyncpgPoolDriver(AsyncpgPoolDriver):
+    async def __aexit__(self, *_: object) -> None:
+        async with self._lock:
+            connection, self._listener_connection = self._listener_connection, None
+            if connection is None:
+                return
+
+            try:
+                await connection.reset()
+            except Exception as e:
+                logger.warning(f"Failed to reset listener connection: {e!r}")
+            finally:
+                # no-op if the connection was already released back to the pool
+                await self._pool.release(connection)
+
+
 @singleton
 async def pgqueuer_factory(asyncpg_pool: asyncpg.Pool) -> PgQueuer:
-    pgq = PgQueuer.from_asyncpg_pool(asyncpg_pool)
+    pgq = PgQueuer(connection=ResilientAsyncpgPoolDriver(asyncpg_pool))
 
     @pgq.entrypoint(EntrypointName.reindex_document, executor_factory=_executor_factory, concurrency_limit=2)
     async def index_document_entrypoint(job: Job, context: Context):
@@ -383,10 +400,27 @@ def queries_factory(pgq: PgQueuer) -> Queries:
     return Queries(pgq.connection)
 
 
+_WORKER_RESTART_MAX_DELAY = 60.0
+_WORKER_STABLE_RUN_DURATION = 60.0
+
+
 @inject
 async def _worker_main(stop_event: asyncio.Event, pgq: PgQueuer = NotImplemented):
+    loop = asyncio.get_running_loop()
+    failures = 0
+    started_at = loop.time()
+
+    async def _run(delay: float):
+        nonlocal started_at
+
+        if delay:
+            await asyncio.sleep(delay)
+        pgq.shutdown.clear()
+        started_at = loop.time()
+        await pgq.run(shutdown_on_listener_failure=True)
+
     def _on_task_done(task: asyncio.Task):
-        nonlocal worker_task
+        nonlocal worker_task, failures
 
         if task.cancelled():
             return
@@ -395,13 +429,14 @@ async def _worker_main(stop_event: asyncio.Event, pgq: PgQueuer = NotImplemented
         if exc := task.exception():
             logger.warning(f"{exc}", exc_info=exc)
 
-        pgq.shutdown.clear()
+        failures = 0 if loop.time() - started_at >= _WORKER_STABLE_RUN_DURATION else failures + 1
+        delay = min(2.0 ** (failures - 1), _WORKER_RESTART_MAX_DELAY) if failures else 0.0
 
-        logger.info("Recreating worker task")
-        worker_task = asyncio.create_task(pgq.run(shutdown_on_listener_failure=True))
+        logger.info(f"Recreating worker task in {delay:.0f}s")
+        worker_task = asyncio.create_task(_run(delay))
         worker_task.add_done_callback(_on_task_done)
 
-    worker_task = asyncio.create_task(pgq.run(shutdown_on_listener_failure=True))
+    worker_task = asyncio.create_task(_run(0.0))
     worker_task.add_done_callback(_on_task_done)
 
     logger.info("Worker started")

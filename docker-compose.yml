@@ -91,15 +91,6 @@ services:
     volumes:
       - elastic-data:/usr/share/elasticsearch/data
 
-  mcp-inspector:
-    image: ghcr.io/modelcontextprotocol/inspector:latest
-    ports:
-      - "6274:6274"
-      - "6277:6277"
-    environment:
-      HOST: 0.0.0.0
-      MCP_AUTO_OPEN_ENABLED: false
-
 volumes:
   core-logs:
   core-data:
