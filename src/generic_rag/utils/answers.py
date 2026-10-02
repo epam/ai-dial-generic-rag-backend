@@ -1,5 +1,6 @@
 import asyncio
 import io
+import itertools
 import logging
 import time
 import traceback
@@ -208,7 +209,7 @@ class DialAnswer(Answer):
         self._used_references: list[tuple[int, int]] = []
 
         self._last_citation_id: uuid.UUID | None = None
-        self._last_annotation_index: int = 0
+        self._annotations_counter = itertools.count()
 
     def __enter__(self) -> Self:
         self._choice.__enter__()
@@ -241,8 +242,6 @@ class DialAnswer(Answer):
                 f'<{CITATION_TAG} data-id="{self._last_citation_id.hex}"></{CITATION_TAG}>'
             )
 
-        self._last_annotation_index += 1
-
         self._choice.send_chunk(
             ArbitraryChunk({
                 "choices": [
@@ -253,7 +252,7 @@ class DialAnswer(Answer):
                             "custom_content": {
                                 "annotations": [
                                     _create_annotation(
-                                        doc, self._last_annotation_index, self._last_citation_id
+                                        doc, next(self._annotations_counter), self._last_citation_id
                                     ),
                                 ]
                             },
