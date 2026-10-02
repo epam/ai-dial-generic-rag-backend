@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 import os
-from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sequence
+from collections.abc import AsyncIterable, Iterable, Sequence
 from pathlib import PosixPath
 from typing import ClassVar, Self
 from urllib.parse import unquote
@@ -10,7 +10,7 @@ from urllib.parse import unquote
 import jsonschema
 from aidial_sdk.exceptions import InvalidRequestError, RequestValidationError, ResourceNotFoundError
 from fastapi import UploadFile
-from injection import inject, scoped
+from injection import afind_instance, inject, scoped
 from pydantic import Field
 from sqlalchemy import UnaryExpression, and_, bindparam, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -200,29 +200,37 @@ class DocumentRepository(RepositoryMixin[DocumentEntity]):
 
 
 class _Document(Document):
-    content_fetcher: Callable[[], Awaitable[AsyncIterable[bytes]]] = Field(repr=False, exclude=True)
+    """A document stored in the system."""
+
+    file_url: str = Field(exclude=True)
 
     async def get_content_stream(self) -> AsyncIterable[bytes]:
-        return await self.content_fetcher()
-
-    @classmethod
-    def from_entity(cls, entity: DocumentEntity, file_storage: FileStorage) -> Self:
-        document_id = entity.document_id
-        content_url = entity.url
+        file_storage = await afind_instance(FileStorage)
 
         async def content_fetcher() -> AsyncIterable[bytes]:
-            if stream := await file_storage.download_file(content_url):
+            if stream := await file_storage.download_file(self.file_url):
                 return stream
-            raise RuntimeError(f"Unable to download content of {document_id=} from {content_url}")
+            raise RuntimeError(f"Unable to download content of {self.id=} from {self.file_url}")
 
+        return await content_fetcher()
+
+    async def share_with_user(self) -> str:
+        file_storage = await afind_instance(FileStorage)
+        return await file_storage.copy_file_to_user(
+            self.url,
+            self.display_name,
+        )
+
+    @classmethod
+    def from_entity(cls, entity: DocumentEntity) -> Self:
         return cls(
-            id=document_id,
+            id=entity.document_id,
             display_name=entity.display_name,
             mime_type=entity.mime_type,
             size=entity.size,
             url=entity.url,
+            file_url=entity.url,
             metadata=entity.metadata_ or {},
-            content_fetcher=content_fetcher,
             status=entity.status,
         )
 
@@ -252,7 +260,7 @@ class DocumentService:
         """
         matcher = DocumentMatcher(self._channel.channel_key, matcher_config) if matcher_config else None
         results = [
-            _Document.from_entity(entity, self._file_storage)
+            _Document.from_entity(entity)
             for entity in await self._repository.list_all(
                 matcher,
                 sort,
@@ -368,7 +376,7 @@ class DocumentService:
             entity.display_name = display_name
             entity.metadata_ = metadata or {}
 
-            return _Document.from_entity(await self._repository.save(entity), self._file_storage)
+            return _Document.from_entity(await self._repository.save(entity))
 
         return await self._create_document(file_meta, display_name, metadata)
 
@@ -413,7 +421,7 @@ class DocumentService:
             self._validate_metadata(metadata)
             entity.metadata_ = metadata
 
-        return _Document.from_entity(await self._repository.save(entity), self._file_storage)
+        return _Document.from_entity(await self._repository.save(entity))
 
     @retry(stop=stop_after_attempt(10), retry=retry_if_exception_type(IntegrityError))
     @transaction
@@ -434,7 +442,6 @@ class DocumentService:
                     metadata_=metadata or {},
                 )
             ),
-            self._file_storage,
         )
 
     def _validate_attachment(self, attachment: UploadFile):
@@ -484,7 +491,7 @@ class DocumentService:
         :param document_id: id of required document
         """
         if document := await self._repository.get_by_id(document_id):
-            return _Document.from_entity(document, self._file_storage)
+            return _Document.from_entity(document)
 
         raise ResourceNotFoundError(f"Document '{document_id}' not found.")
 
@@ -496,8 +503,7 @@ class DocumentService:
         :param document_ids: IDs of required documents
         """
         return [
-            _Document.from_entity(entity, self._file_storage)
-            for entity in await self._repository.get_by_ids(set(document_ids))
+            _Document.from_entity(entity) for entity in await self._repository.get_by_ids(set(document_ids))
         ]
 
     @transaction

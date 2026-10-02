@@ -94,7 +94,7 @@ class RetrievalService:
         if len(doc.chunks) > 1:
             return CombinedResult(
                 source_url=doc.source_url,
-                source_display_name=doc.source_display_name,
+                source_display_name=doc.source_title,
                 source_metadata=doc.source_metadata,
                 chunks=[self._convert_chunk(chunk, doc) for chunk in doc.chunks],
             )
@@ -106,7 +106,7 @@ class RetrievalService:
         if isinstance(chunk, TextChunk):
             return TextChunkResult(
                 source_url=doc.source_url,
-                source_display_name=doc.source_display_name,
+                source_display_name=doc.source_title,
                 source_metadata=doc.source_metadata,
                 **chunk.model_dump(),
             )
@@ -114,7 +114,7 @@ class RetrievalService:
         if isinstance(chunk, ImageChunk):
             return ImageChunkResult(
                 source_url=doc.source_url,
-                source_display_name=doc.source_display_name,
+                source_display_name=doc.source_title,
                 source_metadata=doc.source_metadata,
                 **chunk.model_dump(),
             )

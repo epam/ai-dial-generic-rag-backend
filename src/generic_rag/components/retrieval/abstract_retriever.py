@@ -2,6 +2,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Collection, Sequence
+from pathlib import PosixPath
 from typing import Annotated, NotRequired, Self, TypedDict, cast
 
 import tabulate
@@ -75,6 +76,10 @@ class AbstractRetrieverRequest(BaseModel, ABC):
 class AbstractRetrieverConfig(BaseModel, ABC):
     """:class:`AbstractRetriever` configuration model."""
 
+    title_field: str | None = Field(
+        None,
+        description="A field in document's metadata with user-facing title.",
+    )
     document_selector: BaseModel
 
     @classmethod
@@ -146,7 +151,7 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
             tasks = [
                 asyncio.create_task(
                     _run_retrieval_stage(
-                        answer.create_stage(index.config.display_name),
+                        answer.create_stage(index.config.display_name, debug=True),
                         index.config.display_name,
                         self._index_search(query, index, top_k, documents),
                     )
@@ -184,8 +189,14 @@ class AbstractRetriever[ConfigT: AbstractRetrieverConfig = AbstractRetrieverConf
                 chunks=[chunk],
                 source_id=source.id,
                 source_url=source.url,
+                source_mime_type=source.mime_type,
                 source_page_number=chunk.metadata.page_number,
-                source_display_name=source.display_name,
+                source_name=PosixPath(source.display_name).name,
+                source_title=(
+                    source.metadata.get(self.config.title_field, source.display_name)
+                    if self.config.title_field
+                    else source.display_name
+                ),
                 source_metadata=source.metadata,
             )
             for chunk, source in (
@@ -231,14 +242,10 @@ async def _run_retrieval_stage(
 
             stage.append_content(f"Found {len(result)} reference(s)\n\n")
 
-            if not isinstance(stage, NoopStage):
-                if chunk_summary := _get_chunks_summary(result):
-                    stage.append_content(
-                        tabulate.tabulate(chunk_summary, headers="keys", tablefmt="html") + "\n\n"
-                    )
-
-                for i, document in enumerate(result, start=1):
-                    await stage.add_reference(i, document)
+            if not isinstance(stage, NoopStage) and (chunk_summary := _get_chunks_summary(result)):
+                stage.append_content(
+                    tabulate.tabulate(chunk_summary, headers="keys", tablefmt="pipe") + "\n\n"
+                )
 
         return result
 
@@ -254,7 +261,7 @@ def _get_chunks_summary(retrieved_docs: Sequence[RetrievedDocument]):
         result.extend(
             {
                 "#": f"[{i}]",
-                "source_name": document.source_display_name,
+                "source_title": document.source_title,
                 "page_number": chunk.metadata.page_number,
             }
             | (document.model_extra or {})

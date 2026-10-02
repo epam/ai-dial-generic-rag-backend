@@ -85,19 +85,21 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 | `DIAL_URL` | Yes | URL to the DIAL core. |  |  |
 | `DIAL_API_KEY` | No | Optional api-key for background jobs execution. |  |
 | `DIAL_PUBLIC_URL` | No | URL where DIAL core is publicly accessible (used to generate interactive documentation). |  |  |
-| `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`/`true`/`1`, `no`/`false`/`0` | `yes` |
+| `IN_MEMORY_CACHE_ENABLED` | No | Whether in-memory file cache is enabled.  | `yes`/`true`/`1`, `no`/`false`/`0` | `true` |
 | `IN_MEMORY_CACHE_CAPACITY` | No | In-memoty cache capacity (examples: `128MiB`, `1GiB`, `2.5GiB`) |  | `128MiB` |
 | `DB_HOST` | Yes | Postgresql database host |  |  |
 | `DB_PORT` | No | Postgresql database port |  | `5432` |
 | `DB_NAME` | Yes | Postgresql database name |  |  |
 | `DB_USERNAME` | Yes | Postgresql database username |  |  |
 | `DB_PASSWORD` | No | Database password, if you plan to use password authentication |  |  |
-| `DB_MSI_ENABLED` | No | Use MSI authentication for database access | `yes`/`true`/`1`, `no`/`false`/`0` | `no` |
+| `DB_MSI_ENABLED` | No | Use MSI authentication for database access | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
 | `ELASTICSEARCH_URL` | No | URL of Elasticsearch instance |  |  |
 | `ELASTICSEARCH_USERNAME` | No | Elasticsearch user for authentication |  |  |
 | `ELASTICSEARCH_PASSWORD` | No | Elasticsearch password for authentication |  |  |
 | `ELASTICSEARCH_INDEX_PREFIX` | No | The prefix that will be added to all indexes created in Elasticsearch |  |  |
-| `ENABLE_DEBUG_STAGES` | No | Enable debug stages reporting | `yes`/`true`/`1`, `no`/`false`/`0` | `no` |
+| `ENABLE_DEBUG_STAGES` | No | Enable debug stages reporting | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
+| `ENABLE_ANNOTATIONS` | No | Use annotations provided by Chat 1.* for citations | `yes`/`true`/`1`, `no`/`false`/`0` | `true` |
+| `ENABLE_QUOTE_THUMBNAILS` | No | Include thumbnails for image chunks in citation attachments | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
 
 > [!NOTE]
 > * you should either set `DB_PASSWORD` (to use password authentication) enable MSI by setting `DB_MSI_ENABLED` to `yes`;

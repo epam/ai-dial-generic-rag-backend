@@ -67,9 +67,7 @@ async def lifespan(app: DIALApp):
 
         app.add_chat_completion(
             APP_NAME,
-            ChannelCompletion(
-                enable_debug_stages=settings.enable_debug_stages,
-            ),
+            ChannelCompletion(settings=settings.chat),
         )
         app.add_embeddings(f"{APP_NAME}-embeddings", EmbeddingsEndpoint())
 

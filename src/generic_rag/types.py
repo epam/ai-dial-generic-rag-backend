@@ -150,6 +150,10 @@ class Document(BaseModel, ABC):
     async def get_content_stream(self) -> AsyncIterable[bytes]:
         """Returns async iterable on chunks of the document's content."""
 
+    @abstractmethod
+    async def share_with_user(self) -> str:
+        """Share given document with a user and return a URL of the shared copy."""
+
 
 class Component(ABC):  # noqa: B024
     """Component is a main building block for RAG pipeline."""
@@ -553,10 +557,10 @@ class RetrievedDocument(BaseModel):
 
     source_id: int = Field(description="ID of the source document")
     source_url: str = Field(description="URL of the source document")
+    source_mime_type: str = Field(description="MIME type of the source document")
+    source_name: str = Field(description="the source document filename")
     source_page_number: int = Field(description="number of page of the source document")
-    source_display_name: str = Field(
-        description="name of the source document that can be displayed to the user"
-    )
+    source_title: str = Field(description="user-facing title of the source document")
     source_metadata: dict = Field(
         default_factory=dict, description="metadata associated with the source document"
     )
@@ -571,10 +575,7 @@ class AnswerStage(AbstractContextManager, ABC):
     def append_content(self, content: str): ...
 
     @abstractmethod
-    async def add_citation(self, citation_index: int, doc: RetrievedDocument): ...
-
-    @abstractmethod
-    async def add_reference(self, citation_index: int, doc: RetrievedDocument): ...
+    async def add_citation(self, doc: RetrievedDocument): ...
 
 
 class Answer(AnswerStage, ABC):

@@ -8,6 +8,7 @@ from langchain_community.callbacks import get_openai_callback
 from pydantic import ValidationError
 from pydantic_partial import create_partial_model
 
+from generic_rag.app.settings import ChatSettings
 from generic_rag.channel import Channel, RequestConfig
 from generic_rag.scope import ChannelBindings
 from generic_rag.types import Answer, AnswerGenerator, Retriever
@@ -17,15 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 class ChannelCompletion(ChatCompletion):
-    def __init__(self, *, enable_debug_stages: bool = False):
-        self._enable_debug_stages = enable_debug_stages
+    def __init__(self, *, settings: ChatSettings):
+        self._settings = settings
 
     async def chat_completion(self, request: Request, response: Response) -> None:
         """Chat completion entrypoint."""
         async with ChannelBindings.from_dial_deployment_request(request):
-            answer = SharingManager(
-                DialAnswer(response.create_single_choice(), enable_debug_stages=self._enable_debug_stages)
-            )
+            answer = SharingManager(DialAnswer(response.create_single_choice(), self._settings))
             with answer:
                 try:
                     with answer.create_stage("Channel configuration", debug=True) as stage:

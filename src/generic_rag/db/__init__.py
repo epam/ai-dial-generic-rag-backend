@@ -5,14 +5,14 @@ from injection import inject
 from sqlalchemy import URL
 from yoyo import get_backend, read_migrations
 
-from generic_rag.app.settings import DatabaseConfig
+from generic_rag.app.settings import DatabaseSettings
 from generic_rag.db.auth import TokenProvider
 
 logger = logging.getLogger(__name__)
 
 
 @inject
-def apply_migrations(config: DatabaseConfig, token_provider: TokenProvider | None = NotImplemented):
+def apply_migrations(config: DatabaseSettings, token_provider: TokenProvider | None = NotImplemented):
     migration_source = os.path.join(str(os.path.dirname(__file__)), "migrations")
     migrations = read_migrations(migration_source)
     logger.info(f"Loaded {len(migrations)} migration(s)")

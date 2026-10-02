@@ -41,7 +41,9 @@ def _document(*chunks: AnyChunk, **source) -> RetrievedDocument:
         source_id=chunks[0].document_id,
         source_page_number=chunks[0].metadata.page_number,
         source_url=source.get("source_url", SOURCE_URL),
-        source_display_name=source.get("source_display_name", DISPLAY_NAME),
+        source_name=source.get("source_name", DISPLAY_NAME),
+        source_title=source.get("source_display_name", DISPLAY_NAME),
+        source_mime_type=source.get("mime_type", "application/pdf"),
         source_metadata=source.get("source_metadata", {}),
     )
 

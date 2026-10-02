@@ -21,7 +21,7 @@ from generic_rag.utils.llm import LCMessageLogger
 
 FILE_CHUNK_SIZE = 64 * 1024  # 64KB
 EMBEDDINGS_BATCH_SIZE = 250
-OPENAI_API_VERSION = "2023-03-15-preview"
+OPENAI_API_VERSION = "2025-03-01-preview"
 
 logger = logging.getLogger(__name__)
 
