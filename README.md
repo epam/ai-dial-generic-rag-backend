@@ -99,7 +99,7 @@ See [MCP.md](MCP.md) for setup instructions and coding agent configuration.
 | `ELASTICSEARCH_INDEX_PREFIX` | No | The prefix that will be added to all indexes created in Elasticsearch |  |  |
 | `ENABLE_DEBUG_STAGES` | No | Enable debug stages reporting | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
 | `ENABLE_ANNOTATIONS` | No | Use annotations provided by Chat 1.* for citations | `yes`/`true`/`1`, `no`/`false`/`0` | `true` |
-| `ENABLE_QUOTE_THUMBNAILS` | No | Include thumbnails for image chunks in citation quotes | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
+| `ENABLE_QUOTE_THUMBNAILS` | No | Include thumbnails for image chunks in citation attachments | `yes`/`true`/`1`, `no`/`false`/`0` | `false` |
 
 > [!NOTE]
 > * you should either set `DB_PASSWORD` (to use password authentication) enable MSI by setting `DB_MSI_ENABLED` to `yes`;

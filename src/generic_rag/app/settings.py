@@ -103,7 +103,7 @@ class ChatSettings(BaseModel):
         True, description="use annotations provided by Chat UI 1.* for citations"
     )
     enable_thumbnails: bool = Field(
-        False, description="include thumbnails for image chunks in citation quotes"
+        False, description="include thumbnails for image chunks in citation attachments"
     )
 
 
