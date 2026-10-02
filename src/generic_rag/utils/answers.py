@@ -295,6 +295,9 @@ class DialAnswer(Answer):
 
 
 def _create_annotation(doc: RetrievedDocument, index: int, citation_id: uuid.UUID) -> dict[str, Any]:
+    attachment_title = doc.source_title + (
+        f", page {doc.source_page_number}" if doc.source_page_number else ""
+    )
     selector = (
         {
             "type": "pdf_bbox",
@@ -318,13 +321,13 @@ def _create_annotation(doc: RetrievedDocument, index: int, citation_id: uuid.UUI
             },
         },
         "body": {
-            "title": doc.source_title + f", page {doc.source_page_number}" if doc.source_page_number else "",
+            "title": attachment_title,
             "quote": _create_document_quote(doc, False),
             "source": {
                 "type": "attachment",
                 "attachment": {
                     "type": doc.source_mime_type,
-                    "title": doc.source_name,
+                    "title": attachment_title,
                     "url": doc.source_url,
                 },
             },
@@ -340,7 +343,7 @@ def _create_document_quote(doc: RetrievedDocument, thumbnails) -> str:
         if isinstance(chunk, TextChunk):
             result += f"{chunk.text}\n\n"
 
-        elif isinstance(chunk, ImageChunk):
+        elif isinstance(chunk, ImageChunk) and thumbnails:
             image_title = f"Image of {chunk.image_type}"
             if doc.source_page_number:
                 image_title += (
@@ -348,11 +351,8 @@ def _create_document_quote(doc: RetrievedDocument, thumbnails) -> str:
                     if chunk.image_type == ImageType.page
                     else f", page #{doc.source_page_number}"
                 )
-            if thumbnails:
-                image_url = _create_thumbnail(chunk)
-                result += f'![{image_title}]({image_url} "{image_title}")\n\n'
-            else:
-                result += f"[{image_title}]\n\n"
+            image_url = _create_thumbnail(chunk)
+            result += f'![{image_title}]({image_url} "{image_title}")\n\n'
 
     return result.rstrip()
 
