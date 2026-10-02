@@ -29,7 +29,7 @@ RUN apt-get update && \
       "util-linux (>=2.41.5-0+deb13u1)" \
       "openssl (>=3.5.7-1~deb13u2)" \
       "gzip (>=1.13-1+deb13u1)" \
-      "libpcre2-8-0 (>=10.46-1~deb13u2)" \
+      "libpcre2-8-0 (>=10.46-1~deb13u3)" \
       "libsqlite3-0 (>=3.46.1-7+deb13u2)" \
       "perl-base (>=5.40.1-6+deb13u1)" && \
     apt-get clean
