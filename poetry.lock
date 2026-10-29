@@ -3261,34 +3261,34 @@ six = "*"
 
 [[package]]
 name = "langgraph"
-version = "1.2.7"
+version = "1.2.18"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "langgraph-1.2.7-py3-none-any.whl", hash = "sha256:249349a5d6a32cb0aa2304a8fb6529bd0cf56db8780d21db9e086e5383668f89"},
-    {file = "langgraph-1.2.7.tar.gz", hash = "sha256:dcdf5b441bf8c7c7c154e603b302c9dbfbfd2d11e1b7ae7d93a5aba979dc87bd"},
+    {file = "langgraph-1.2.18-py3-none-any.whl", hash = "sha256:f430f28ea7fbc129c3cf7dc31c19c33dc27d93aeebd25c6d64fd5c1bad93d27d"},
+    {file = "langgraph-1.2.18.tar.gz", hash = "sha256:4c3e4289043ed0f99625a09990a012d7b16bb576301d8616810de7db01725f9e"},
 ]
 
 [package.dependencies]
 langchain-core = ">=1.4.7,<2"
-langgraph-checkpoint = ">=4.1.0,<5.0.0"
+langgraph-checkpoint = ">=4.3.0,<5.0.0"
 langgraph-prebuilt = ">=1.1.0,<1.2.0"
-langgraph-sdk = ">=0.4.2,<0.5.0"
+langgraph-sdk = ">=0.4.6,<0.5.0"
 pydantic = ">=2.7.4"
 xxhash = ">=3.5.0"
 
 [[package]]
 name = "langgraph-checkpoint"
-version = "4.1.1"
+version = "4.3.1"
 description = "Library with base interfaces for LangGraph checkpoint savers."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "langgraph_checkpoint-4.1.1-py3-none-any.whl", hash = "sha256:25d29144b082827218e7bc3f1e9b0566a4bb007895cd6cc26f66a8428739f56e"},
-    {file = "langgraph_checkpoint-4.1.1.tar.gz", hash = "sha256:6c2bdb530c91f91d7d9c1bd100925d0fc4f498d418c17f3587d1526279482a25"},
+    {file = "langgraph_checkpoint-4.3.1-py3-none-any.whl", hash = "sha256:215a826935c8db4d9676e79fd95943e5b3847d78604390898e1d98581cc594e5"},
+    {file = "langgraph_checkpoint-4.3.1.tar.gz", hash = "sha256:625e7c78a72b33e7c47f7e87ca051060fb90aa66f5fd551c472c08376fb669cb"},
 ]
 
 [package.dependencies]
