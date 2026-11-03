@@ -1,22 +1,12 @@
-FROM python:3.13-slim-trixie AS builder
-
-WORKDIR /opt
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.cache/pypoetry \
-    --mount=type=bind,source=./pyproject.toml,target=./pyproject.toml \
-    --mount=type=bind,source=./poetry.lock,target=./poetry.lock \
-    pip install poetry==2.1.3 && \
-    poetry self add poetry-plugin-export && \
-    poetry export -f requirements.txt --without-hashes --without dev > ./requirements.txt
-
-FROM python:3.13-slim-trixie AS runner
+FROM python:3.13-slim-trixie
 
 WORKDIR /opt/app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    NUMBA_CACHE_DIR=/tmp/numba_cache \
+    UV_PROJECT_ENVIRONMENT=/usr/local
+
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache \
     FASTMCP_LOG_ENABLED=false \
     DO_NOT_TRACK=true
 
@@ -40,10 +30,14 @@ RUN python -m ensurepip --version && \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,from=builder,source=/opt/requirements.txt,target=./requirements.txt \
-    uv pip install -r requirements.txt \
-      --index-strategy unsafe-best-match \
-      --system
+    --mount=type=bind,source=./pyproject.toml,target=./pyproject.toml \
+    --mount=type=bind,source=./uv.lock,target=./uv.lock \
+    uv sync \
+      --locked \
+      --no-dev \
+      --link-mode copy \
+      --no-install-project \
+      --inexact
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     python -m spacy download en_core_web_sm --system && \
@@ -65,4 +59,4 @@ SentenceTransformer('epam/bge-small-en', device='cpu').save('$BGE_EMBEDDING_MODE
 
 COPY --chown=appuser ./src ./
 
-CMD [ "python3", "main.py" ]
+CMD [ "python", "main.py" ]
