@@ -1,10 +1,11 @@
 services:
   themes:
-    image: epam/ai-dial-chat-themes:0.20.0
+    image: epam/ai-dial-chat-themes:0.22.0
     restart: unless-stopped
 
   chat:
-    image: epam/ai-dial-chat:0.49.3
+    image: epam/ai-dial-chat:0.49.10
+    platform: linux/amd64
     ports:
       - "3000:3000"
     depends_on:
@@ -20,6 +21,7 @@ services:
 
   redis:
     image: redis:7.2.4-alpine3.19
+    platform: linux/amd64
     ports:
       - "6379:6379"
     mem_limit: 1200m
@@ -28,7 +30,7 @@ services:
     restart: unless-stopped
 
   core:
-    image: epam/ai-dial-core:0.47.0
+    image: epam/ai-dial-core:0.49.3
     ports:
       - "8080:8080"
     depends_on:
@@ -56,7 +58,7 @@ services:
     command: [ "/opt/config/config.sh && exec docker-entrypoint.sh" ]
 
   adapter-dial:
-    image: epam/ai-dial-adapter-dial:0.16.1
+    image: epam/ai-dial-adapter-dial:0.20.0
     environment:
       DIAL_URL: "http://core:8080"
       LOG_LEVEL: "INFO"
