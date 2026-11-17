@@ -1717,14 +1717,14 @@ tasks = ["pydocket (>=0.20.0)"]
 
 [[package]]
 name = "filelock"
-version = "3.29.4"
+version = "4.2.11"
 description = "A platform independent file lock."
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "filelock-3.29.4-py3-none-any.whl", hash = "sha256:dac1648087d5115554850d113e7dd8c83ab2d38e3435dde2d4f163847e57b767"},
-    {file = "filelock-3.29.4.tar.gz", hash = "sha256:10cdb3656fc44541cdf30652a93fb10ec6b05325620eb316bd26893e4201538a"},
+    {file = "filelock-4.2.11-py3-none-any.whl", hash = "sha256:020e229e4bb9d410fc799c07ddf45fa217cba970278f40b30751d94f309b69e2"},
+    {file = "filelock-4.2.11.tar.gz", hash = "sha256:0cb84119fb8dce17898e1f69c974d5019daa59c4d7656be390a5fa59ccced912"},
 ]
 
 [[package]]
@@ -8635,7 +8635,7 @@ description = "Provider of IANA time zone data"
 optional = false
 python-versions = ">=2"
 groups = ["main"]
-markers = "platform_system != \"Windows\" or sys_platform == \"win32\""
+markers = "sys_platform == \"win32\" or platform_system != \"Windows\""
 files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
@@ -8655,21 +8655,22 @@ files = [
 
 [[package]]
 name = "unstructured"
-version = "0.27.5"
+version = "0.27.37"
 description = "A library that prepares raw documents for downstream ML tasks."
 optional = false
 python-versions = "<3.14,>=3.11"
 groups = ["main"]
 files = [
-    {file = "unstructured-0.27.5-py3-none-any.whl", hash = "sha256:4624145cb102296425ed0c4917711f8068746680f73718ac819b54568a5d293e"},
-    {file = "unstructured-0.27.5.tar.gz", hash = "sha256:68c72b9ea17fb34e0037126d3eca23f76290b9e5171b221d6d078dcff2ffd77d"},
+    {file = "unstructured-0.27.37-py3-none-any.whl", hash = "sha256:97945cebd168957f96d4d42976cdd62f1d204d3bd2d13afcb16e5fd6c8921393"},
+    {file = "unstructured-0.27.37.tar.gz", hash = "sha256:27c31aa319a245fdd800dd5569654f358c7823f37cbba8271933d2b534a7cde2"},
 ]
 
 [package.dependencies]
 beautifulsoup4 = ">=4.14.3,<5.0.0"
+certifi = ">=2026.10.19"
 charset-normalizer = ">=3.4.4,<4.0.0"
 emoji = ">=2.15.0,<3.0.0"
-filelock = ">=3.12.0,<4.0.0"
+filelock = ">=4.2.1,<5.0.0"
 filetype = ">=1.2.0,<2.0.0"
 google-cloud-vision = {version = ">=3.12.1,<4.0.0", optional = true, markers = "extra == \"pdf\""}
 html5lib = ">=1.1,<2.0.0"
@@ -8701,7 +8702,7 @@ unstructured-pytesseract = {version = ">=0.3.15,<1.0.0", optional = true, marker
 wrapt = ">=2.1.1,<3.0.0"
 
 [package.extras]
-all-docs = ["google-cloud-vision (>=3.12.1,<4.0.0)", "markdown (>=3.10.1,<4.0.0)", "msoffcrypto-tool (>=6.0.0,<7.0.0)", "networkx (>=3.2.0,<4.0.0)", "openai-whisper (>=20231117,<20270000)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "pdf2image (>=1.17.0,<2.0.0)", "pdfminer-six (>=20251230,<20270000)", "pi-heif (>=1.2.0,<2.0.0)", "pikepdf (>=10.3.0,<11.0.0)", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "pypdf (>=6.9.1,<7.0.0)", "python-docx (>=1.2.0,<2.0.0)", "python-pptx (>=1.0.2,<2.0.0)", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system != \"Windows\"", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system == \"Windows\" and python_version == \"3.12\"", "unstructured-pytesseract (>=0.3.15,<1.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
+all-docs = ["google-cloud-vision (>=3.12.1,<4.0.0)", "markdown (>=3.10.1,<4.0.0)", "msoffcrypto-tool (>=6.0.0,<7.0.0)", "openai-whisper (>=20231117,<20270000)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "pdf2image (>=1.17.0,<2.0.0)", "pdfminer-six (>=20251230,<20270000)", "pi-heif (>=1.2.0,<2.0.0)", "pikepdf (>=10.3.0,<11.0.0)", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "pypdf (>=6.9.1,<7.0.0)", "python-docx (>=1.2.0,<2.0.0)", "python-pptx (>=1.0.2,<2.0.0)", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system != \"Windows\"", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system == \"Windows\" and python_version == \"3.12\"", "unstructured-pytesseract (>=0.3.15,<1.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
 audio = ["openai-whisper (>=20231117,<20270000)"]
 chunking-tokens = ["tiktoken (>=0.12.0,<1.0.0)"]
 csv = ["pandas (>=2.0.0,<3.0.0)"]
@@ -8711,7 +8712,7 @@ epub = ["pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "p
 huggingface = ["sentencepiece (>=0.2.0,<1.0.0)", "torch (>=2.10.0,<3.0.0) ; platform_system != \"Windows\"", "torch (>=2.10.0,<3.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "transformers (>=5.2.0,<6.0.0)"]
 image = ["google-cloud-vision (>=3.12.1,<4.0.0)", "pdf2image (>=1.17.0,<2.0.0)", "pdfminer-six (>=20251230,<20270000)", "pi-heif (>=1.2.0,<2.0.0)", "pikepdf (>=10.3.0,<11.0.0)", "pypdf (>=6.9.1,<7.0.0)", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system != \"Windows\"", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system == \"Windows\" and python_version == \"3.12\"", "unstructured-pytesseract (>=0.3.15,<1.0.0)"]
 ingest = ["unstructured-ingest[airtable,astradb,azure,azure-ai-search,bedrock,biomed,box,chroma,confluence,couchbase,databricks-volumes,delta-table,discord,dropbox,elasticsearch,gcs,github,gitlab,google-drive,hubspot,huggingface,jira,kafka,kdbai,milvus,mongodb,notion,octoai,onedrive,openai,opensearch,outlook,pinecone,postgres,qdrant,reddit,remote,s3,salesforce,sftp,sharepoint,singlestore,slack,vectara,vertexai,voyageai,weaviate,wikipedia] (>=1.4.0,<2.0.0) ; platform_system != \"Windows\"", "unstructured-ingest[airtable,astradb,azure,azure-ai-search,bedrock,biomed,box,chroma,confluence,couchbase,databricks-volumes,delta-table,discord,dropbox,elasticsearch,gcs,github,gitlab,google-drive,hubspot,huggingface,jira,kafka,kdbai,milvus,mongodb,notion,octoai,onedrive,openai,opensearch,outlook,pinecone,postgres,qdrant,reddit,remote,s3,salesforce,sftp,sharepoint,singlestore,slack,vectara,vertexai,voyageai,weaviate,wikipedia] (>=1.4.0,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\""]
-local-inference = ["google-cloud-vision (>=3.12.1,<4.0.0)", "markdown (>=3.10.1,<4.0.0)", "msoffcrypto-tool (>=6.0.0,<7.0.0)", "networkx (>=3.2.0,<4.0.0)", "openai-whisper (>=20231117,<20270000)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "pdf2image (>=1.17.0,<2.0.0)", "pdfminer-six (>=20251230,<20270000)", "pi-heif (>=1.2.0,<2.0.0)", "pikepdf (>=10.3.0,<11.0.0)", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "pypdf (>=6.9.1,<7.0.0)", "python-docx (>=1.2.0,<2.0.0)", "python-pptx (>=1.0.2,<2.0.0)", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system != \"Windows\"", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system == \"Windows\" and python_version == \"3.12\"", "unstructured-pytesseract (>=0.3.15,<1.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
+local-inference = ["google-cloud-vision (>=3.12.1,<4.0.0)", "markdown (>=3.10.1,<4.0.0)", "msoffcrypto-tool (>=6.0.0,<7.0.0)", "openai-whisper (>=20231117,<20270000)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "pdf2image (>=1.17.0,<2.0.0)", "pdfminer-six (>=20251230,<20270000)", "pi-heif (>=1.2.0,<2.0.0)", "pikepdf (>=10.3.0,<11.0.0)", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "pypdf (>=6.9.1,<7.0.0)", "python-docx (>=1.2.0,<2.0.0)", "python-pptx (>=1.0.2,<2.0.0)", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system != \"Windows\"", "unstructured-inference (>=1.6.12,<2.0.0) ; platform_system == \"Windows\" and python_version == \"3.12\"", "unstructured-pytesseract (>=0.3.15,<1.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
 md = ["markdown (>=3.10.1,<4.0.0)"]
 odt = ["pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\"", "python-docx (>=1.2.0,<2.0.0)"]
 org = ["pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\""]
@@ -8722,7 +8723,7 @@ pptx = ["python-pptx (>=1.0.2,<2.0.0)"]
 rst = ["pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\""]
 rtf = ["pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system != \"Windows\"", "pypandoc-binary (>=1.16.2,<2.0.0) ; platform_system == \"Windows\" and python_version < \"3.13\""]
 tsv = ["pandas (>=2.0.0,<3.0.0)"]
-xlsx = ["msoffcrypto-tool (>=6.0.0,<7.0.0)", "networkx (>=3.2.0,<4.0.0)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
+xlsx = ["msoffcrypto-tool (>=6.0.0,<7.0.0)", "openpyxl (>=3.1.5,<4.0.0)", "pandas (>=2.0.0,<3.0.0)", "xlrd (>=2.0.1,<3.0.0)"]
 
 [[package]]
 name = "unstructured-client"
@@ -9874,4 +9875,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "f190c1972a3e29aa251893dfe821c8dd7c039ea83214e80a91feffd096201f4c"
+content-hash = "324eea308d3889f235aabc63391615f7b7ea2e208b47d2bc70b033fd1bb96fec"
