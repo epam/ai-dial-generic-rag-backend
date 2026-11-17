@@ -17,5 +17,5 @@ jobs:
     uses: epam/ai-dial-ci/.github/workflows/python_docker_pr.yml@4.13.2
     with:
       python-version: "3.13"
-      poetry-version: "2.3.2"
+      python-package-manager: uv
     secrets: inherit

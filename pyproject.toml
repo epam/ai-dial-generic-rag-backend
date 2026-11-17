@@ -2,9 +2,13 @@
 name = "generic-rag"
 version = "0.3.3"
 description = "Generic RAG is a DIAL application that answers user questions based on data from a collection of preloaded and pre-indexed documents"
-license = "Apache-2.0"
-readme = "README.md"
 requires-python = ">=3.13,<3.14"
+readme = "README.md"
+license = "Apache-2.0"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "aidial-sdk[telemetry] (>=0.40.0,<0.41.0)",
     "fastapi (>=0.138.2,<0.139.0)",
@@ -46,40 +50,40 @@ dependencies = [
     "jsonpath-ng (>=1.8.0,<2.0.0)",
     "tblib (>=3.2.2,<4.0.0)",
     "aiohttp-sse-client (>=0.2.1,<0.3.0)",
+    "greenlet>=3.3.2",
 ]
 
-[tool.poetry]
-package-mode = false
+[dependency-groups]
+dev = [
+    "ruff>=0.15.20,<0.16",
+    "click>=8.3.1,<9",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.0.0,<2",
+]
 
-[[tool.poetry.source]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-priority = "explicit"
+[tool.uv]
+package = false
+default-groups = "all"
 
-[tool.poetry.dependencies]
+[tool.uv.sources]
 torch = [
-    { source = "PyPI", platform = "darwin" },
-    { source = "pytorch-cpu", platform = "linux" },
-    { source = "pytorch-cpu", platform = "win32" },
+    { index = "pytorch-cpu" },
 ]
 torchvision = [
-    { source = "PyPI", platform = "darwin" },
-    { source = "pytorch-cpu", platform = "linux" },
-    { source = "pytorch-cpu", platform = "win32" },
+    { index = "pytorch-cpu" },
 ]
 
-[tool.poetry.group.dev.dependencies]
-ruff = "^0.15.20"
-click = "^8.3.1"
-pytest = "^9.0.3"
-pytest-asyncio = "^1.0.0"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
 
 [tool.ruff.format]
 preview = true
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
 
 
 [tool.ruff]
