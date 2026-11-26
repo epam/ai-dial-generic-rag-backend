@@ -12,3 +12,11 @@ excludes:
     - pattern: "test"
       reason: "TEST_DEPENDENCY_OF"
       comment: "Packages for testing only."
+resolutions:
+  rule_violations:
+    - message: ".*PyPI::httpx2:2\\..*"
+      reason: "CANT_FIX_EXCEPTION"
+      comment: "BSD 3-Clause License: https://github.com/pydantic/httpx2/blob/v2.16.2/LICENSE.md"
+    - message: ".*PyPI::httpcore2:2\\..*"
+      reason: "CANT_FIX_EXCEPTION"
+      comment: "BSD 3-Clause License: https://github.com/pydantic/httpx2/blob/v2.16.2/LICENSE.md"
