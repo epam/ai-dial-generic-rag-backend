@@ -50,11 +50,6 @@ Run the application (the images will be built automatically):
 make run
 ```
 
-> [!IMPORTANT]
-> If your OS is not Linux, Docker Engine could already support `host.docker.internal` resolution,
-> and defining it in the way as it's done in `docker-compose.yml` will break it. So if this is the case,
-> comment out the `extra_hosts` section for the `core` service in `docker-compose.yml`.
-
 * Now you can open <http://localhost:3000> for chat and <http://localhost:5000/docs> for swagger documentation
 * Use `make down` to stop the containers that continue running in background
 * Use `make cleanup` to clean data volumes created during run
@@ -261,11 +256,6 @@ Or use you favorite IDE.
 Now you can open:
 * <http://localhost:3000> for DIAL Chat UI
 * <http://localhost:5000/docs> for generic-rag swagger documentation
-
-> [!IMPORTANT]
-> If your OS is not Linux, Docker Engine could already support `host.docker.internal` resolution,
-> and defining it in the way as it's done in `docker-compose.yml` will break it. So if this is the case,
-> comment out the `extra_hosts` section for the `core` service in `docker-compose.yml`.
 
 * Use `make down` to stop the containers that continue running in background
 * Use `make cleanup` to clean data volumes created during run
