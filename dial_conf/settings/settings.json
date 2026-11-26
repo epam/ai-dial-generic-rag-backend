@@ -2,6 +2,9 @@
   "server": {
     "port": 8080
   },
+  "resources": {
+    "maxSizeToCache": 4096
+  },
   "identityProviders": {
     "test": {
       "rolePath": "roles",

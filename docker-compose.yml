@@ -24,9 +24,8 @@ services:
     platform: linux/amd64
     ports:
       - "6379:6379"
-    mem_limit: 1200m
     command: >
-      redis-server --maxmemory 1024mb --maxmemory-policy volatile-lfu --save "" --appendonly no --loglevel warning
+      redis-server --maxmemory 384mb --maxmemory-policy volatile-lfu --save "" --appendonly no
     restart: unless-stopped
 
   core:
@@ -50,10 +49,7 @@ services:
       - ./dial_conf/settings:/opt/settings
       - ./dial_conf/core/config.sh:/opt/config/config.sh
       - ./dial_conf/core/config-template.json:/opt/config/config-template.json
-      - core-logs:/app/log
       - core-data:/app/data
-    extra_hosts:
-      - host.docker.internal:host-gateway
     entrypoint: [ "/bin/sh", "-c" ]
     command: [ "/opt/config/config.sh && exec docker-entrypoint.sh" ]
 
@@ -92,7 +88,6 @@ services:
       - elastic-data:/usr/share/elasticsearch/data
 
 volumes:
-  core-logs:
   core-data:
   postgres-data:
   elastic-data:
